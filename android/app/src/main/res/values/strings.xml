@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AI Hiring</string>
+    <string name="title_activity_main">AI Hiring</string>
+    <string name="package_name">com.nsolbpo.aihiring</string>
+    <string name="custom_url_scheme">com.nsolbpo.aihiring</string>
+</resources>

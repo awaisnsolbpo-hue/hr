@@ -1,0 +1,11 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\public",
+    "\\src",
+    "\\src\\integrations",
+    "\\src\\integrations\\supabase"
+  ],
+  "SelectedNode": "\\src\\integrations\\supabase\\types.ts",
+  "PreviewInSolutionExplorer": false
+}

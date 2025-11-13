@@ -1,0 +1,60 @@
+# dependencies
+node_modules/
+.bun/
+.pnpm-store/
+*.lock
+
+# build output
+dist/
+build/
+.cache/
+.out/
+.vite/
+coverage/
+
+# local environment files
+.env
+.env.*.local
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# editor and system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# misc
+*.tsbuildinfo
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# OS-specific
+ehthumbs.db
+Desktop.ini
+
+# Testing and coverage
+coverage/
+.vitest/
+jest-cache/
+jest/
+
+# Capacitor / Android / iOS
+/android/app/build/
+android/.gradle/
+ios/Pods/
+ios/build/
+*.keystore
+*.jks
+
+# Supabase local
+.supabase/

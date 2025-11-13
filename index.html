@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Enhanced viewport for mobile -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Prevent tap highlight on mobile -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <title>AI Hiring - From CV Chaos to Qualified Shortlists in Minutes</title>
+    <meta name="description" content="Auto-screen, auto-interview, and shortlist top talent using AI. Transform your hiring process with intelligent candidate screening." />
+    <meta name="author" content="AI Hiring" />
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <meta property="og:title" content="AI Hiring - Smart Recruitment Platform" />
+    <meta property="og:description" content="Auto-screen, auto-interview, and shortlist top talent using AI" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@lovable_dev" />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    
+    <style>
+      /* Prevent zoom on input focus (iOS fix) */
+      input, textarea, select {
+        font-size: 16px !important;
+      }
+      
+      /* Disable text selection for better app feel */
+      body {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      /* Allow text selection in specific elements */
+      input, textarea, [contenteditable] {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
