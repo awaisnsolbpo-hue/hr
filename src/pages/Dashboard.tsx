@@ -3,6 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
     Sparkles,
     LogOut,
@@ -18,6 +27,10 @@ import {
     Star,
     Moon,
     Sun,
+    User,
+    Settings,
+    Building2,
+    Search,
 } from "lucide-react";
 import {
     Dialog,
@@ -51,6 +64,15 @@ interface UpcomingMeeting {
     ai_score: number | null;
 }
 
+interface Profile {
+    id: string;
+    full_name: string;
+    email: string;
+    company_name: string | null;
+    company_logo_url: string | null;
+    is_company_profile_complete: boolean;
+}
+
 const Dashboard = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
@@ -69,6 +91,7 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [loggingOut, setLoggingOut] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [darkMode, setDarkMode] = useState(() => {
         const saved = localStorage.getItem('darkMode');
         return saved ? JSON.parse(saved) : false;
@@ -120,6 +143,7 @@ const Dashboard = () => {
             }
 
             setUser(session.user);
+            fetchProfile(session.user.id);
             fetchMetrics(session.user.id);
             fetchRecentActivities(session.user.id);
             fetchUpcomingMeetings(session.user.id);
@@ -133,6 +157,7 @@ const Dashboard = () => {
                     navigate("/login", { replace: true });
                 } else if (event === 'SIGNED_IN' && session) {
                     setUser(session.user);
+                    fetchProfile(session.user.id);
                     fetchMetrics(session.user.id);
                     fetchRecentActivities(session.user.id);
                     fetchUpcomingMeetings(session.user.id);
@@ -144,6 +169,33 @@ const Dashboard = () => {
             subscription.unsubscribe();
         };
     }, [navigate]);
+
+    const fetchProfile = async (userId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("id, full_name, email, company_name, company_logo_url, is_company_profile_complete")
+                .eq("id", userId)
+                .single();
+
+            if (error) throw error;
+            setProfile(data);
+
+            if (data && !data.is_company_profile_complete) {
+                toast({
+                    title: "Complete Your Company Profile",
+                    description: "Add company details to make your job postings more attractive!",
+                    action: (
+                        <Button size="sm" onClick={() => navigate("/profile")}>
+                            Complete Now
+                        </Button>
+                    ),
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching profile:", error);
+        }
+    };
 
     useEffect(() => {
         if (!user) return;
@@ -247,74 +299,62 @@ const Dashboard = () => {
 
     const fetchMetrics = async (userId: string) => {
         try {
+            console.log('🔄 Fetching metrics for user:', userId);
+
+            // 1. COUNT ACTIVE JOBS
             const { count: jobsCount } = await supabase
                 .from("jobs")
                 .select("*", { count: "exact", head: true })
                 .eq("user_id", userId)
                 .eq("status", "active");
+            console.log('📊 Active Jobs:', jobsCount);
 
+            // 2. COUNT LINKEDIN JOBS
             const { count: linkedInJobsCount } = await supabase
                 .from("jobs")
                 .select("*", { count: "exact", head: true })
                 .eq("user_id", userId)
                 .not("linkedin_post_id", "is", null);
+            console.log('📊 LinkedIn Jobs:', linkedInJobsCount);
 
+            // 3. COUNT TOTAL UNIQUE CANDIDATES (from Applicant table only)
             const { data: applicantData } = await supabase
                 .from("Applicant")
                 .select("email, created_at")
                 .eq("user_id", userId);
+            console.log('📊 Applicants:', applicantData?.length || 0);
 
-            const { data: clientData } = await supabase
-                .from("Client")
-                .select("email, created_at")
-                .eq("user_id", userId);
+            const candidatesCount = applicantData?.length || 0;
 
-            const { data: shortlistedData } = await supabase
-                .from("Shortlisted_candidates")
-                .select("email, created_at")
-                .eq("user_id", userId);
-
-            const { data: finalInterviewData } = await supabase
-                .from("Qualified_For_Final_Interview")
-                .select("email, created_at")
-                .eq("user_id", userId);
-
-            const allCandidatesRaw = [
-                ...(applicantData || []).map(c => ({ ...c, source: 'Applicant' })),
-                ...(clientData || []).map(c => ({ ...c, source: 'Client' })),
-                ...(shortlistedData || []).map(c => ({ ...c, source: 'Shortlisted' })),
-                ...(finalInterviewData || []).map(c => ({ ...c, source: 'Final Interview' }))
-            ];
-
-            const uniqueCandidates = deduplicateCandidatesByEmail(allCandidatesRaw);
-            const candidatesCount = uniqueCandidates.length;
-
+            // 4. COUNT INITIAL INTERVIEW QUALIFIED
             const { count: qualifiedCount } = await supabase
                 .from("Qualified_For_Final_Interview")
                 .select("*", { count: "exact", head: true })
                 .eq("user_id", userId);
+            console.log('📊 Qualified for Interview:', qualifiedCount);
 
+            // 5. COUNT SCHEDULED INTERVIEWS (upcoming only)
             const now = new Date();
-            const nextWeek = new Date(now);
-            nextWeek.setDate(now.getDate() + 7);
-
             const { data: upcomingMeetingsData } = await supabase
                 .from("scheduled_meetings")
                 .select("*")
                 .eq("user_id", userId)
-                .gte("meeting_date", now.toISOString())
-                .lte("meeting_date", nextWeek.toISOString());
+                .gte("meeting_date", now.toISOString());
 
             const scheduledMeetingsCount = upcomingMeetingsData?.filter(meeting => {
                 const status = meeting.meeting_status?.toLowerCase();
                 return status !== 'completed' && status !== 'cancelled';
             }).length || 0;
+            console.log('📊 Scheduled Meetings:', scheduledMeetingsCount);
 
+            // 6. COUNT SHORTLISTED CANDIDATES
             const { count: shortlistedCount } = await supabase
                 .from("Shortlisted_candidates")
                 .select("*", { count: "exact", head: true })
                 .eq("user_id", userId);
+            console.log('📊 Shortlisted:', shortlistedCount);
 
+            // 7. CALCULATE SUCCESS RATE
             const successRate =
                 candidatesCount > 0 && shortlistedCount
                     ? Math.round((shortlistedCount / candidatesCount) * 100)
@@ -329,6 +369,16 @@ const Dashboard = () => {
                 shortlistedCandidates: shortlistedCount || 0,
                 successRate,
             });
+
+            console.log('📊 FINAL METRICS:', {
+                activeJobs: jobsCount || 0,
+                totalCandidates: candidatesCount,
+                qualified: qualifiedCount || 0,
+                scheduled: scheduledMeetingsCount,
+                shortlisted: shortlistedCount || 0,
+                successRate: successRate + '%',
+            });
+
         } catch (error) {
             console.error("Error fetching metrics:", error);
         } finally {
@@ -450,6 +500,15 @@ const Dashboard = () => {
         });
     };
 
+    const getInitials = (name: string) => {
+        return name
+            .split(" ")
+            .map(n => n[0])
+            .join("")
+            .toUpperCase()
+            .slice(0, 2);
+    };
+
     const metricCards = [
         {
             title: "Active Jobs",
@@ -457,7 +516,7 @@ const Dashboard = () => {
             subtitle: metrics.linkedInJobs > 0 ? `${metrics.linkedInJobs} on LinkedIn` : "No LinkedIn posts yet",
             icon: Briefcase,
             gradient: "from-blue-500 to-blue-600",
-            link: "/jobs?filter=active",
+            link: "/dashboard/active-jobs",
         },
         {
             title: "Total Candidates",
@@ -465,7 +524,7 @@ const Dashboard = () => {
             subtitle: "Unique applicants",
             icon: Users,
             gradient: "from-green-500 to-green-600",
-            link: "/candidates",
+            link: "/dashboard/total-candidates",
         },
         {
             title: "Initial Interview Qualified",
@@ -473,15 +532,15 @@ const Dashboard = () => {
             subtitle: "Qualified for final interview",
             icon: CheckCircle,
             gradient: "from-purple-500 to-purple-600",
-            link: "/candidates?table=qualified",
+            link: "/dashboard/qualified",
         },
         {
             title: "Scheduled Interviews",
             value: loading ? "..." : metrics.scheduledInterviews.toString(),
-            subtitle: "Next 7 days",
+            subtitle: "Upcoming meetings",
             icon: Calendar,
             gradient: "from-orange-500 to-orange-600",
-            link: "/scheduled-meetings",
+            link: "/dashboard/scheduled-interviews",
         },
         {
             title: "Shortlisted Candidates",
@@ -489,7 +548,7 @@ const Dashboard = () => {
             subtitle: "Final interview stage",
             icon: MessageSquare,
             gradient: "from-pink-500 to-pink-600",
-            link: "/candidates?table=shortlisted",
+            link: "/dashboard/shortlisted",
         },
         {
             title: "Success Rate",
@@ -497,7 +556,7 @@ const Dashboard = () => {
             subtitle: `${metrics.shortlistedCandidates} of ${metrics.totalCandidates} candidates`,
             icon: TrendingUp,
             gradient: "from-teal-500 to-teal-600",
-            link: "/candidates?table=shortlisted",
+            link: "/dashboard/success-rate",
         },
     ];
 
@@ -521,10 +580,79 @@ const Dashboard = () => {
                             <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary via-purple-500 to-pink-500 shadow-lg">
                                 <Sparkles className="h-5 w-5 text-white" />
                             </div>
-                            <span className="text-xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">AI Hiring</span>
+                            <span className="text-xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                                AI Hiring
+                            </span>
                         </Link>
 
                         <div className="flex items-center gap-3">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                                        <Avatar className="h-10 w-10 border-2 border-primary/20">
+                                            {profile?.company_logo_url ? (
+                                                <AvatarImage src={profile.company_logo_url} alt={profile.company_name || "Company"} />
+                                            ) : null}
+                                            <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white">
+                                                {profile?.company_name ? getInitials(profile.company_name) : user.email?.charAt(0).toUpperCase()}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        {!profile?.is_company_profile_complete && (
+                                            <span className="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                                        )}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className={`w-64 ${darkMode ? 'bg-gray-800 border-gray-700' : ''}`} align="end" forceMount>
+                                    <DropdownMenuLabel className="font-normal">
+                                        <div className="flex flex-col space-y-2">
+                                            <div className="flex items-center gap-3">
+                                                <Avatar className="h-12 w-12">
+                                                    {profile?.company_logo_url ? (
+                                                        <AvatarImage src={profile.company_logo_url} />
+                                                    ) : null}
+                                                    <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white">
+                                                        {profile?.company_name ? getInitials(profile.company_name) : user.email?.charAt(0).toUpperCase()}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-semibold leading-none truncate">
+                                                        {profile?.full_name || user.email?.split('@')[0]}
+                                                    </p>
+                                                    {profile?.company_name && (
+                                                        <p className="text-xs text-muted-foreground mt-1 truncate flex items-center gap-1">
+                                                            <Building2 className="h-3 w-3" />
+                                                            {profile.company_name}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-xs leading-none text-muted-foreground mt-1 truncate">
+                                                        {user.email}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {!profile?.is_company_profile_complete && (
+                                                <Badge variant="outline" className="text-xs border-orange-500 text-orange-600">
+                                                    Profile Incomplete
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator className={darkMode ? 'bg-gray-700' : ''} />
+                                    <DropdownMenuItem onClick={() => navigate("/profile")} className="cursor-pointer">
+                                        <User className="mr-2 h-4 w-4" />
+                                        <span>Profile</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer">
+                                        <Settings className="mr-2 h-4 w-4" />
+                                        <span>Settings</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className={darkMode ? 'bg-gray-700' : ''} />
+                                    <DropdownMenuItem onClick={handleLogout} disabled={loggingOut} className="cursor-pointer text-red-600 focus:text-red-600">
+                                        <LogOut className="mr-2 h-4 w-4" />
+                                        <span>{loggingOut ? "Logging out..." : "Log out"}</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
                             <Button
                                 variant="outline"
                                 size="icon"
@@ -556,17 +684,6 @@ const Dashboard = () => {
                                     </div>
                                 </DialogContent>
                             </Dialog>
-
-                            <Button
-                                variant="ghost"
-                                size="default"
-                                onClick={handleLogout}
-                                disabled={loggingOut}
-                                className={`transition-colors ${darkMode ? 'hover:bg-red-900/20 hover:text-red-400' : 'hover:bg-red-50 hover:text-red-600'}`}
-                            >
-                                <LogOut className="h-4 w-4 mr-2" />
-                                {loggingOut ? "Logging out..." : "Logout"}
-                            </Button>
                         </div>
                     </div>
                 </div>
@@ -580,15 +697,15 @@ const Dashboard = () => {
                         <div className="space-y-6">
                             <div>
                                 <h1 className={`text-4xl font-bold mb-2 transition-colors ${darkMode ? 'text-white' : 'bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 bg-clip-text text-transparent'}`}>
-                                    Welcome back, {user.email?.split('@')[0]}! 👋
+                                    Welcome back, {profile?.full_name || user.email?.split('@')[0]}! 👋
                                 </h1>
                                 <p className={`text-lg transition-colors ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                    Here's your real-time hiring activity overview
+                                    {profile?.company_name ? `${profile.company_name} - ` : ''}Here's your real-time hiring activity overview
                                 </p>
                             </div>
 
-                            {/* Quick Actions */}
-                            <div className="grid grid-cols-3 gap-4">
+                            {/* Quick Actions - 4 CARDS */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Link to="/create-job" className="group">
                                     <Card className={`hover:shadow-2xl transition-all duration-300 border-2 border-transparent hover:border-primary cursor-pointer h-full relative overflow-hidden ${darkMode ? 'bg-gray-800 hover:bg-gray-750' : 'bg-white'}`}>
                                         <div className={`absolute inset-0 bg-gradient-to-br from-primary/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300`}></div>
@@ -625,6 +742,20 @@ const Dashboard = () => {
                                             </div>
                                             <p className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Import</p>
                                             <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Add candidates</p>
+                                        </CardContent>
+                                    </Card>
+                                </Link>
+                                {/* NEW ADVANCED SEARCH CARD */}
+                                <Link to="/advanced-search" className="group">
+                                    <Card className={`hover:shadow-2xl transition-all duration-300 border-2 border-transparent hover:border-purple-500 cursor-pointer h-full relative overflow-hidden ${darkMode ? 'bg-gray-800 hover:bg-gray-750' : 'bg-white'}`}>
+                                        <div className={`absolute inset-0 bg-gradient-to-br from-purple-500/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300`}></div>
+                                        <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-purple-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left`}></div>
+                                        <CardContent className="p-6 text-center relative z-10">
+                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 group-hover:rotate-3 transition-all shadow-lg group-hover:shadow-2xl group-hover:shadow-purple-500/50">
+                                                <Search className="h-6 w-6 text-white" />
+                                            </div>
+                                            <p className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Search</p>
+                                            <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Find candidates</p>
                                         </CardContent>
                                     </Card>
                                 </Link>
@@ -675,7 +806,7 @@ const Dashboard = () => {
                                             </div>
                                         ))}
                                         {upcomingMeetings.length > 3 && (
-                                            <Link to="/scheduled-meetings">
+                                            <Link to="/dashboard/scheduled-interviews">
                                                 <Button variant="outline" size="sm" className={`w-full text-xs transition-colors ${darkMode ? 'border-orange-800 hover:bg-orange-900/20 hover:text-orange-400' : 'border-orange-200 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-300'}`}>
                                                     View All ({upcomingMeetings.length}) <ArrowRight className="h-3 w-3 ml-1" />
                                                 </Button>

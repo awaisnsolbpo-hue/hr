@@ -27,7 +27,7 @@ interface ScheduledMeeting {
     candidate_phone: string | null;
     job_id: string | null;
     job_title: string | null;
-    meeting_date: string; // This is a timestamp, not just a date
+    meeting_date: string;
     meeting_duration: number;
     meeting_link: string;
     meeting_status: string | null;
@@ -76,6 +76,7 @@ export default function ScheduledMeetings() {
                     filter: `user_id=eq.${user.id}`
                 },
                 () => {
+                    console.log('📊 Real-time update detected, refreshing meetings...');
                     fetchScheduledMeetings(user.id);
                 }
             )
@@ -90,7 +91,6 @@ export default function ScheduledMeetings() {
         try {
             setLoading(true);
 
-            // Fetch meetings with correct column names from your database
             const { data, error } = await supabase
                 .from("scheduled_meetings")
                 .select("*")
@@ -102,7 +102,7 @@ export default function ScheduledMeetings() {
                 throw error;
             }
 
-            console.log("Fetched meetings:", data);
+            console.log('📊 Scheduled Meetings Loaded:', data?.length || 0);
             setMeetings(data || []);
         } catch (error) {
             console.error("Error fetching scheduled meetings:", error);
@@ -162,7 +162,7 @@ export default function ScheduledMeetings() {
         const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
         if (diffHours < 1) {
-            return `in ${diffMins} minutes`;
+            return `in ${diffMins} minute${diffMins !== 1 ? 's' : ''}`;
         } else if (diffHours < 24) {
             return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`;
         } else {
@@ -185,6 +185,7 @@ export default function ScheduledMeetings() {
             pending: { label: "Pending", className: "bg-yellow-100 text-yellow-700 border-yellow-200" },
             completed: { label: "Completed", className: "bg-green-100 text-green-700 border-green-200" },
             cancelled: { label: "Cancelled", className: "bg-red-100 text-red-700 border-red-200" },
+            confirmed: { label: "Confirmed", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
         };
 
         const config = statusConfig[statusLower] || statusConfig.scheduled;
@@ -319,12 +320,22 @@ export default function ScheduledMeetings() {
                                                         <div className="space-y-1">
                                                             <div className="flex items-center gap-2 text-gray-600">
                                                                 <Mail className="h-4 w-4" />
-                                                                <span>{meeting.candidate_email}</span>
+                                                                <a 
+                                                                    href={`mailto:${meeting.candidate_email}`}
+                                                                    className="hover:text-blue-600 hover:underline"
+                                                                >
+                                                                    {meeting.candidate_email}
+                                                                </a>
                                                             </div>
                                                             {meeting.candidate_phone && (
                                                                 <div className="flex items-center gap-2 text-gray-600">
                                                                     <Phone className="h-4 w-4" />
-                                                                    <span>{meeting.candidate_phone}</span>
+                                                                    <a 
+                                                                        href={`tel:${meeting.candidate_phone}`}
+                                                                        className="hover:text-blue-600 hover:underline"
+                                                                    >
+                                                                        {meeting.candidate_phone}
+                                                                    </a>
                                                                 </div>
                                                             )}
                                                             {meeting.job_title && (

@@ -33,7 +33,7 @@ interface Candidate {
     job_id?: string;
     user_id?: string;
     source: 'Applicant' | 'Shortlisted' | 'Final Interview' | 'Client';
-    stage_priority: number; // For determining highest stage
+    stage_priority: number;
     Transcript?: string;
     'Recording URL'?: string;
     'Screen recording'?: string;
@@ -52,11 +52,12 @@ const Candidates = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
     const [searchParams] = useSearchParams();
+
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [loading, setLoading] = useState(true);
-    const [filterSource, setFilterSource] = useState<string>("all");
+    const [filterSource] = useState<string>("all");
     const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
     const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
 
@@ -85,196 +86,37 @@ const Candidates = () => {
         setFilteredCandidates(filtered);
     }, [searchQuery, candidates, filterSource]);
 
-    // STAGE PRIORITY: Higher number = more advanced stage
-    const getStagePriority = (source: Candidate['source']): number => {
-        const priorities = {
-            'Client': 1,           // Manual import (earliest stage)
-            'Applicant': 2,        // Applied via public link
-            'Final Interview': 3,  // Qualified for final interview
-            'Shortlisted': 4       // Shortlisted (most advanced)
-        };
-        return priorities[source];
-    };
-
-    const deduplicateCandidates = (allCandidates: Candidate[]): Candidate[] => {
-        const candidateMap = new Map<string, Candidate>();
-
-        allCandidates.forEach(candidate => {
-            const email = candidate.email.toLowerCase();
-            const existing = candidateMap.get(email);
-
-            // Keep the candidate with highest stage priority
-            if (!existing || candidate.stage_priority > existing.stage_priority) {
-                candidateMap.set(email, candidate);
-            }
-        });
-
-        return Array.from(candidateMap.values());
-    };
-
     const fetchCandidates = async () => {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
+            const { data: auth } = await supabase.auth.getUser();
+            if (!auth?.user) {
                 navigate("/login");
                 return;
             }
 
-            let allCandidates: Candidate[] = [];
-            let jobsMap: Record<string, string> = {};
+            setLoading(true);
 
-            if (tableFilter === 'qualified') {
-                const { data: finalInterviewData, error: finalInterviewError } = await supabase
-                    .from("Qualified_For_Final_Interview")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
+            // Fetch candidates along with related job data
+            const { data, error } = await supabase
+                .from("Applicant")
+                .select(`
+                    *,
+                    jobs:job_id (
+                        title
+                    )
+                `)
+                .eq("user_id", auth.user.id)
+                .order("created_at", { ascending: false });
 
-                if (finalInterviewError) throw finalInterviewError;
+            if (error) throw error;
 
-                const jobIds = (finalInterviewData || []).map(c => c.job_id).filter(Boolean);
-                const uniqueJobIds = [...new Set(jobIds)];
+            const loaded = (data || []).map(c => ({
+                ...c,
+                source: "Applicant" as const,
+                stage_priority: 2
+            }));
 
-                if (uniqueJobIds.length > 0) {
-                    const { data: jobsData } = await supabase
-                        .from("jobs")
-                        .select("id, title")
-                        .in("id", uniqueJobIds);
-
-                    if (jobsData) {
-                        jobsMap = Object.fromEntries(
-                            jobsData.map(job => [job.id, job.title])
-                        );
-                    }
-                }
-
-                allCandidates = (finalInterviewData || []).map(c => ({
-                    ...c,
-                    source: 'Final Interview' as const,
-                    stage_priority: getStagePriority('Final Interview'),
-                    jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                }));
-
-            } else if (tableFilter === 'shortlisted') {
-                const { data: shortlistedData, error: shortlistedError } = await supabase
-                    .from("Shortlisted_candidates")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                if (shortlistedError) throw shortlistedError;
-
-                const jobIds = (shortlistedData || []).map(c => c.job_id).filter(Boolean);
-                const uniqueJobIds = [...new Set(jobIds)];
-
-                if (uniqueJobIds.length > 0) {
-                    const { data: jobsData } = await supabase
-                        .from("jobs")
-                        .select("id, title")
-                        .in("id", uniqueJobIds);
-
-                    if (jobsData) {
-                        jobsMap = Object.fromEntries(
-                            jobsData.map(job => [job.id, job.title])
-                        );
-                    }
-                }
-
-                allCandidates = (shortlistedData || []).map(c => ({
-                    ...c,
-                    source: 'Shortlisted' as const,
-                    stage_priority: getStagePriority('Shortlisted'),
-                    jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                }));
-
-            } else {
-                // Fetch from ALL tables
-                const { data: applicantData } = await supabase
-                    .from("Applicant")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                const { data: shortlistedData } = await supabase
-                    .from("Shortlisted_candidates")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                const { data: finalInterviewData } = await supabase
-                    .from("Qualified_For_Final_Interview")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                const { data: clientData } = await supabase
-                    .from("Client")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
-
-                // Fetch job titles
-                const allJobIds = [
-                    ...(applicantData || []).map(c => c.job_id),
-                    ...(shortlistedData || []).map(c => c.job_id),
-                    ...(finalInterviewData || []).map(c => c.job_id),
-                    ...(clientData || []).map(c => c.job_id)
-                ].filter(Boolean);
-
-                const uniqueJobIds = [...new Set(allJobIds)];
-
-                if (uniqueJobIds.length > 0) {
-                    const { data: jobsData } = await supabase
-                        .from("jobs")
-                        .select("id, title")
-                        .in("id", uniqueJobIds);
-
-                    if (jobsData) {
-                        jobsMap = Object.fromEntries(
-                            jobsData.map(job => [job.id, job.title])
-                        );
-                    }
-                }
-
-                // Merge all datasets with source labels and stage priority
-                allCandidates = [
-                    ...(applicantData || []).map(c => ({
-                        ...c,
-                        source: 'Applicant' as const,
-                        stage_priority: getStagePriority('Applicant'),
-                        jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                    })),
-                    ...(shortlistedData || []).map(c => ({
-                        ...c,
-                        source: 'Shortlisted' as const,
-                        stage_priority: getStagePriority('Shortlisted'),
-                        jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                    })),
-                    ...(finalInterviewData || []).map(c => ({
-                        ...c,
-                        source: 'Final Interview' as const,
-                        stage_priority: getStagePriority('Final Interview'),
-                        jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                    })),
-                    ...(clientData || []).map(c => ({
-                        ...c,
-                        source: 'Client' as const,
-                        stage_priority: getStagePriority('Client'),
-                        jobs: c.job_id ? { title: jobsMap[c.job_id] || 'N/A' } : undefined
-                    }))
-                ];
-
-                // ✨ DEDUPLICATE BY EMAIL - Keep highest stage only
-                allCandidates = deduplicateCandidates(allCandidates);
-            }
-
-            // Sort by created_at
-            allCandidates.sort((a, b) =>
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-
-            setCandidates(allCandidates);
-            setFilteredCandidates(allCandidates);
+            setCandidates(loaded);
         } catch (error: any) {
             console.error("Fetch error:", error);
             toast({
@@ -318,12 +160,8 @@ const Candidates = () => {
     };
 
     const getScore = (candidate: Candidate) => {
-        if (candidate.Score !== undefined && candidate.Score !== null) {
-            return candidate.Score;
-        }
-        if (candidate.ai_score !== undefined && candidate.ai_score !== null) {
-            return candidate.ai_score;
-        }
+        if (candidate.Score != null) return candidate.Score;
+        if (candidate.ai_score != null) return candidate.ai_score;
         return null;
     };
 
@@ -345,7 +183,7 @@ const Candidates = () => {
                             <span className="text-xl font-bold text-gradient">AI Hiring</span>
                         </Link>
 
-                        <Button variant="ghost" size="default" onClick={() => navigate("/dashboard")}>
+                        <Button variant="ghost" onClick={() => navigate("/dashboard")}>
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back to Dashboard
                         </Button>
@@ -359,14 +197,11 @@ const Candidates = () => {
                         <div>
                             <h1 className="text-3xl font-bold mb-2">{getPageTitle()}</h1>
                             <p className="text-muted-foreground">
-                                Total: {filteredCandidates.length} {tableFilter ? '' : 'unique '}candidates
+                                Total: {filteredCandidates.length} candidates
                             </p>
                         </div>
                         {tableFilter && (
-                            <Button
-                                variant="outline"
-                                onClick={() => navigate('/candidates')}
-                            >
+                            <Button variant="outline" onClick={() => navigate('/candidates')}>
                                 View All Candidates
                             </Button>
                         )}
@@ -374,8 +209,8 @@ const Candidates = () => {
 
                     <Card>
                         <CardContent className="pt-6">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     placeholder="Search by name, email, or job title..."
                                     value={searchQuery}
@@ -408,17 +243,18 @@ const Candidates = () => {
                                                 <TableHead>Name</TableHead>
                                                 <TableHead>Email</TableHead>
                                                 <TableHead>Phone</TableHead>
-                                                <TableHead>Job Applied</TableHead>
-                                                {!tableFilter && <TableHead>Current Stage</TableHead>}
-                                                <TableHead>Interview Status</TableHead>
+                                                <TableHead>Job</TableHead>
+                                                <TableHead>Stage</TableHead>
+                                                <TableHead>Interview</TableHead>
                                                 <TableHead>Score</TableHead>
-                                                <TableHead>Applied Date</TableHead>
+                                                <TableHead>Applied</TableHead>
                                                 <TableHead>Actions</TableHead>
                                             </TableRow>
                                         </TableHeader>
+
                                         <TableBody>
                                             {filteredCandidates.map((candidate) => (
-                                                <TableRow key={`${candidate.source}-${candidate.id}`}>
+                                                <TableRow key={candidate.id}>
                                                     <TableCell className="font-medium">
                                                         <div className="flex flex-col">
                                                             {candidate.name}
@@ -434,10 +270,13 @@ const Candidates = () => {
                                                             )}
                                                         </div>
                                                     </TableCell>
+
                                                     <TableCell>{candidate.email}</TableCell>
                                                     <TableCell>{candidate.phone || "N/A"}</TableCell>
                                                     <TableCell>{candidate.jobs?.title || "N/A"}</TableCell>
-                                                    {!tableFilter && <TableCell>{getSourceBadge(candidate.source)}</TableCell>}
+
+                                                    <TableCell>{getSourceBadge(candidate.source)}</TableCell>
+
                                                     <TableCell>
                                                         <div className="flex flex-col gap-1">
                                                             {getInterviewStatusBadge(candidate.interview_status)}
@@ -449,47 +288,46 @@ const Candidates = () => {
                                                             )}
                                                         </div>
                                                     </TableCell>
+
                                                     <TableCell>
-                                                        {(() => {
-                                                            const score = getScore(candidate);
-                                                            return score !== null ? (
-                                                                <Badge variant="secondary">{score}%</Badge>
-                                                            ) : (
-                                                                "N/A"
-                                                            );
-                                                        })()}
+                                                        {getScore(candidate) !== null ? (
+                                                            <Badge variant="secondary">{getScore(candidate)}%</Badge>
+                                                        ) : (
+                                                            "N/A"
+                                                        )}
                                                     </TableCell>
+
                                                     <TableCell>
                                                         {new Date(candidate.created_at).toLocaleDateString()}
                                                     </TableCell>
+
                                                     <TableCell>
                                                         <div className="flex gap-2">
-                                                            {candidate.source === 'Shortlisted' && (
+                                                            {candidate.source !== 'Shortlisted' && (
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
                                                                     onClick={() => handleScheduleMeeting(candidate)}
-                                                                    title="Schedule Meeting"
                                                                 >
                                                                     <Calendar className="h-4 w-4" />
                                                                 </Button>
                                                             )}
+
                                                             {candidate.cv_file_url && (
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
                                                                     onClick={() => window.open(candidate.cv_file_url, "_blank")}
-                                                                    title="Download CV"
                                                                 >
                                                                     <Download className="h-4 w-4" />
                                                                 </Button>
                                                             )}
+
                                                             {candidate['Recording URL'] && (
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="sm"
                                                                     onClick={() => window.open(candidate['Recording URL'], "_blank")}
-                                                                    title="View Recording"
                                                                 >
                                                                     📹
                                                                 </Button>
