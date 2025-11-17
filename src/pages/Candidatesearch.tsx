@@ -16,7 +16,7 @@ import {
   Calendar,
   TrendingUp,
 } from "lucide-react";
-import { searchCandidatesByRole, SearchResult } from "@/lib/searchApi";
+import { searchCandidatesByRole, SearchResult } from "@/lib/Searchapi";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
