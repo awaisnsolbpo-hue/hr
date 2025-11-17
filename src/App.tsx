@@ -20,7 +20,7 @@ import PublicUpload from "./pages/PublicUpload";
 import GmailImport from "./pages/GmailImport";
 import Interviews from "./pages/Interviews";
 import ConnectLinkedin from "./pages/ConnectLinkedIn";
-// import LinkedinScraper from "./lib/linkedinScraper";
+import { getLinkedInJobDetails } from "./lib/linkedinScraper";
 import GmailCallback from "./pages/GmailCallback";
 import LinkedinCallback from "./pages/LinkedInCallback";
 import IntegrationsSettings from "./pages/IntegrationsSettings";
@@ -29,10 +29,12 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import CandidateSearch from "./pages/Candidatesearch";
 import AdvancedSearch from "./pages/AdvancedSearch";
+import InterviewLandingPage from "./pages/InterviewLandingPage";
+import InterviewRoom from "./pages/InterviewRoom";
 import NotFound from "./pages/NotFound";
 
 // NEW: Dashboard Metric Pages
-import ActiveJobsPage from "@/pages/JobDetail";
+import ActiveJobsPage from "./pages/Activejobspage";
 import TotalCandidatesPage from "@/pages/Totalcandidatespage";
 import InitialInterviewQualifiedPage from "@/pages/Initialinterviewqualifiedpage";
 import ScheduledInterviewsPage from "@/pages/Scheduledinterviewspage";
@@ -85,6 +87,10 @@ const App = () => (
           {/* Interview Routes */}
           <Route path="/interviews" element={<Interviews />} />
           <Route path="/scheduled-meetings" element={<ScheduledMeetings />} />
+          
+          {/* AI Interview Routes */}
+          <Route path="/interview-landing" element={<InterviewLandingPage />} />
+          <Route path="/interview-room" element={<InterviewRoom />} />
           
           {/* Integration Routes */}
           <Route path="/gmail-import" element={<GmailImport />} />
