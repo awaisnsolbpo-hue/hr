@@ -40,7 +40,7 @@ const InterviewLandingPage = () => {
         .select("email, interview_status, name")
         .eq("email", email.trim())
         .maybeSingle();
-
+   console.log(data);
       if (error) {
         console.error("Supabase query error:", error);
         toast({

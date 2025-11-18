@@ -57,7 +57,7 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPassword />} />
           
           {/* Public Job Application Routes */}
-          <Route path="/jobs/:jobId" element={<PublicJobView />} />
+          <Route path="/jobs/public/:jobId" element={<PublicJobView />} />
           <Route path="/upload/:linkCode" element={<PublicUpload />} />
           
           {/* Protected Routes */}

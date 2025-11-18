@@ -15,6 +15,10 @@ const InterviewRoom = () => {
   const { toast } = useToast();
   const email = searchParams.get("email");
 
+  // Get Supabase credentials for sync updates on page close
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
   const [candidate, setCandidate] = useState<CandidateRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [interviewActive, setInterviewActive] = useState(false);
@@ -23,9 +27,9 @@ const InterviewRoom = () => {
   const [vapiClient, setVapiClient] = useState<any>(null);
   const [vapiInitialized, setVapiInitialized] = useState(false);
   const [vapiReady, setVapiReady] = useState(false);
-  const [transcript, setTranscript] = useState<Array<{text: string; timestamp: string; speaker: 'AI' | 'HUMAN'}>>([]);
+  const [transcript, setTranscript] = useState<Array<{ text: string; timestamp: string; speaker: 'AI' | 'HUMAN' }>>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [partialTranscript, setPartialTranscript] = useState<{text: string; speaker: 'AI' | 'HUMAN'; startTime: string} | null>(null);
+  const [partialTranscript, setPartialTranscript] = useState<{ text: string; speaker: 'AI' | 'HUMAN'; startTime: string } | null>(null);
   const [transcriptTimeout, setTranscriptTimeout] = useState<NodeJS.Timeout | null>(null);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -39,10 +43,14 @@ const InterviewRoom = () => {
   const [retryAttempts, setRetryAttempts] = useState(0);
   const [connecting, setConnecting] = useState(false);
   const [showThankYou, setShowThankYou] = useState(false);
-  
+  const [interviewStarted, setInterviewStarted] = useState(false);
+  const [wakeLock, setWakeLock] = useState<any>(null);
+
   // Ref for transcript container to enable auto-scroll
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
+  const isEndingInterview = useRef(false);
+  const audioMonitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-scroll transcript to bottom when new entries are added
   useEffect(() => {
@@ -51,9 +59,133 @@ const InterviewRoom = () => {
     }
   }, [transcript]);
 
+  // Handle page refresh/close - mark interview as completed if started
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (interviewStarted && candidate && !isEndingInterview.current) {
+        // Show confirmation dialog
+        e.preventDefault();
+        e.returnValue = 'Are you sure you want to leave? Your interview will be marked as completed.';
+
+        // Use synchronous XHR request for guaranteed delivery on page unload
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('Supabase credentials not available');
+          return;
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('PATCH', `${supabaseUrl}/rest/v1/Qualified_For_Final_Interview?id=eq.${candidate.id}`, false); // false = synchronous
+        xhr.setRequestHeader('apikey', supabaseKey);
+        xhr.setRequestHeader('Authorization', `Bearer ${supabaseKey}`);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Prefer', 'return=minimal');
+
+        try {
+          xhr.send(JSON.stringify({ interview_status: 'Completed' }));
+          console.log('Interview marked as completed (beforeunload)');
+        } catch (error) {
+          console.error('Failed to update interview status on beforeunload:', error);
+        }
+      }
+    };
+
+    const handleUnload = () => {
+      if (interviewStarted && candidate && !isEndingInterview.current) {
+        // Use sendBeacon as last resort (non-blocking, guaranteed to send)
+        if (!supabaseUrl || !supabaseKey) {
+          console.error('Supabase credentials not available');
+          return;
+        }
+
+        const url = `${supabaseUrl}/rest/v1/Qualified_For_Final_Interview?id=eq.${candidate.id}`;
+
+        // Create proper request for sendBeacon with headers
+        // Note: sendBeacon doesn't support custom headers, so we use FormData approach
+        const formData = new FormData();
+        formData.append('interview_status', 'Completed');
+
+        try {
+          // Fallback to fetch with keepalive
+          fetch(url, {
+            method: 'PATCH',
+            keepalive: true, // Important: ensures request completes even after page closes
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({ interview_status: 'Completed' })
+          }).catch(err => console.error('Unload update failed:', err));
+
+          console.log('Interview marked as completed (unload - keepalive)');
+        } catch (error) {
+          console.error('Failed to update interview status on unload:', error);
+        }
+      }
+    };
+
+    // Handle page visibility changes to maintain audio connection
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log("Page hidden - maintaining audio connection");
+        // Keep audio tracks alive by checking their state
+        if (mediaStream && interviewActive) {
+          const audioTrack = mediaStream.getAudioTracks()[0];
+          if (audioTrack && audioTrack.readyState === 'live') {
+            // Force track to stay active
+            audioTrack.enabled = true;
+          }
+        }
+      } else {
+        console.log("Page visible - verifying audio connection");
+        // When page becomes visible, verify audio is still working
+        if (mediaStream && interviewActive) {
+          const audioTrack = mediaStream.getAudioTracks()[0];
+          if (audioTrack && audioTrack.readyState !== 'live') {
+            console.error("Audio track not live after visibility change");
+          }
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [interviewStarted, candidate, interviewActive, mediaStream]);
+
+  // Helper function to mark interview as completed
+  const markInterviewAsCompleted = async (candidateId: string, isRefresh: boolean = false) => {
+    try {
+      const { error } = await supabase
+        .from('Qualified_For_Final_Interview' as any)
+        .update({ interview_status: 'Completed' })
+        .eq('id', candidateId);
+
+      if (error) {
+        console.error("Error marking interview as completed:", error);
+      } else {
+        console.log("Interview marked as completed", isRefresh ? "(due to refresh/close)" : "");
+      }
+    } catch (error) {
+      console.error("Error in markInterviewAsCompleted:", error);
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Clear audio monitor interval
+      if (audioMonitorIntervalRef.current) {
+        clearInterval(audioMonitorIntervalRef.current);
+      }
+
       // Cleanup all media streams when component unmounts
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
@@ -129,7 +261,7 @@ const InterviewRoom = () => {
         // If no scheduled interview found, check if all are completed
         if (!candidateData) {
           const allCompleted = data.every((record: any) => record.interview_status === "Completed");
-          
+
           if (allCompleted) {
             toast({
               title: "All Interviews Completed",
@@ -193,32 +325,110 @@ const InterviewRoom = () => {
       setMediaError(null);
 
       // Request video only first
-      const videoStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        video: {
           width: { ideal: 1280 },
           height: { ideal: 720 }
-        } 
-      });
-      
-      // Then request audio only
-      const audioStream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
         }
       });
-      
+
+      // Then request audio with more persistent settings
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1 // Mono is more stable
+        }
+      });
+
       // Combine both streams
       const combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioStream.getAudioTracks()
       ]);
-      
+
+      // Monitor audio track and attempt automatic recovery
+      const audioTrack = combinedStream.getAudioTracks()[0];
+      if (audioTrack) {
+        // Keep track settings to prevent unwanted stops
+        audioTrack.enabled = true;
+
+        audioTrack.onended = async () => {
+          console.warn("Audio track ended unexpectedly - attempting recovery");
+
+          if (interviewActive && !isEndingInterview.current) {
+            // Don't show error immediately, try to recover first
+            try {
+              // Try to get new audio track
+              const newAudioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                  sampleRate: 48000,
+                  channelCount: 1
+                }
+              });
+
+              const newAudioTrack = newAudioStream.getAudioTracks()[0];
+
+              if (newAudioTrack && mediaStream) {
+                // Remove old audio track
+                const oldAudioTrack = mediaStream.getAudioTracks()[0];
+                if (oldAudioTrack) {
+                  mediaStream.removeTrack(oldAudioTrack);
+                  oldAudioTrack.stop();
+                }
+
+                // Add new audio track
+                mediaStream.addTrack(newAudioTrack);
+                console.log("Audio track recovered successfully");
+
+                toast({
+                  title: "Audio Reconnected",
+                  description: "Microphone connection restored.",
+                });
+              }
+            } catch (error) {
+              console.error("Failed to recover audio track:", error);
+              toast({
+                title: "Audio Lost",
+                description: "Microphone disconnected. Please check your audio device.",
+                variant: "destructive",
+              });
+            }
+          }
+        };
+
+        // Prevent audio track from being muted by browser
+        Object.defineProperty(audioTrack, 'enabled', {
+          get: function () { return this._enabled !== false; },
+          set: function (value) { this._enabled = value; }
+        });
+      }
+
+      // Monitor video track for unexpected ending
+      const videoTrack = combinedStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.warn("Video track ended unexpectedly");
+          if (interviewActive && !isEndingInterview.current) {
+            toast({
+              title: "Camera Lost",
+              description: "Camera disconnected. Please check your camera device.",
+              variant: "destructive",
+            });
+          }
+        };
+      }
+
       setCameraOn(true);
       setMicOn(true);
       setMediaStream(combinedStream);
       setRetryAttempts(0);
-      
+
       // Display video in preview
       const videoElement = document.getElementById("candidate-video") as HTMLVideoElement;
       if (videoElement) {
@@ -229,12 +439,12 @@ const InterviewRoom = () => {
       }
 
       return combinedStream;
-      
+
     } catch (error: any) {
       console.error('Media access error:', error);
-      
+
       let errorMessage = '';
-      
+
       // Handle specific errors
       if (error.name === 'NotReadableError') {
         errorMessage = 'Camera is being used by another application. Please close other apps and try again.';
@@ -249,9 +459,9 @@ const InterviewRoom = () => {
       } else {
         errorMessage = `Failed to access camera/microphone: ${error.message}`;
       }
-      
+
       setMediaError(errorMessage);
-      
+
       // Auto-retry once after 2 seconds (only if not already a retry)
       if (!isRetry && retryAttempts === 0) {
         setRetryAttempts(1);
@@ -259,18 +469,18 @@ const InterviewRoom = () => {
           title: "Retrying...",
           description: "Attempting to access camera and microphone again in 2 seconds.",
         });
-        
+
         await new Promise(resolve => setTimeout(resolve, 2000));
         return await requestMediaAccess(true);
       }
-      
+
       // Show error toast
       toast({
         title: "Media Access Error",
         description: errorMessage,
         variant: "destructive",
       });
-      
+
       return null;
     }
   };
@@ -320,13 +530,13 @@ const InterviewRoom = () => {
       if (hasScreenAudio || hasMicAudio) {
         const audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
-        
+
         // Connect screen audio if available
         if (hasScreenAudio) {
           const screenAudioSource = audioContext.createMediaStreamSource(screenStream);
           screenAudioSource.connect(destination);
         }
-        
+
         // Connect microphone audio if available
         if (hasMicAudio) {
           const micAudioSource = audioContext.createMediaStreamSource(mediaStream!);
@@ -343,7 +553,7 @@ const InterviewRoom = () => {
         combinedStream = new MediaStream([
           ...screenStream.getVideoTracks(),
         ]);
-        
+
         toast({
           title: "No Audio Detected",
           description: "Recording will proceed with video only. Make sure your microphone is working.",
@@ -381,7 +591,7 @@ const InterviewRoom = () => {
       return true;
     } catch (err: any) {
       console.error("Screen recording error:", err);
-      
+
       // Only show error if user actually denied/cancelled the screen share
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         toast({
@@ -410,7 +620,7 @@ const InterviewRoom = () => {
           variant: "destructive",
         });
       }
-      
+
       return false;
     }
   };
@@ -427,10 +637,29 @@ const InterviewRoom = () => {
     // Set connecting state
     setConnecting(true);
 
+    // Mark that interview has been started (for refresh detection)
+    setInterviewStarted(true);
+
+    // Request wake lock to prevent system sleep/suspension during interview
+    try {
+      if ('wakeLock' in navigator) {
+        const lock = await (navigator as any).wakeLock.request('screen');
+        setWakeLock(lock);
+        console.log("Wake lock acquired - system won't suspend during interview");
+
+        lock.addEventListener('release', () => {
+          console.log("Wake lock released");
+        });
+      }
+    } catch (err) {
+      console.warn("Wake lock not supported or failed:", err);
+    }
+
     // Request media access first (camera + mic)
     const stream = await requestMediaAccess();
     if (!stream) {
       setConnecting(false);
+      setInterviewStarted(false);
       return;
     }
 
@@ -445,6 +674,7 @@ const InterviewRoom = () => {
         setMicOn(false);
       }
       setConnecting(false);
+      setInterviewStarted(false);
       return;
     }
 
@@ -460,12 +690,13 @@ const InterviewRoom = () => {
         variant: "destructive",
       });
       setConnecting(false);
+      setInterviewStarted(false);
       return;
     }
 
     try {
       let vapi = vapiClient;
-      
+
       // Initialize Vapi client only once
       if (!vapi) {
         vapi = createVapiClient();
@@ -475,10 +706,26 @@ const InterviewRoom = () => {
         // Handle Vapi errors
         vapi.on("error", (error: any) => {
           console.error("Vapi error:", error);
+
+          // Ignore "Meeting has ended" error as it's expected when ending interview
+          if (error?.error?.message === 'Meeting has ended' ||
+            error?.message === 'Meeting has ended' ||
+            error?.errorMsg === 'Meeting has ended') {
+            console.log("Interview ended normally");
+            return; // Don't show error toast
+          }
+
+          // Handle audio track ending
+          if (error?.errorMsg?.includes('Local audio track ended') ||
+            error?.message?.includes('Local audio track ended')) {
+            console.log("Audio track ended - Vapi will retry automatically");
+            return; // Don't show error toast - Vapi handles reconnection
+          }
+
           setConnecting(false);
           toast({
             title: "Interview Error",
-            description: error.message || "An error occurred during the interview. Please try again.",
+            description: error.message || error.errorMsg || "An error occurred during the interview. Please try again.",
             variant: "destructive",
           });
         });
@@ -510,7 +757,7 @@ const InterviewRoom = () => {
             setPartialTranscript(null);
           }
         });
-        
+
         vapi.on("speech-end", () => {
           setIsSpeaking(false);
           // Finalize AI transcript after speech ends
@@ -523,24 +770,24 @@ const InterviewRoom = () => {
             setPartialTranscript(null);
           }
         });
-        
+
         vapi.on("message", (message: any) => {
           if (message.type === "transcript" && message.transcript) {
-            const currentTime = new Date().toLocaleTimeString('en-US', { 
-              hour12: false, 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              second: '2-digit' 
+            const currentTime = new Date().toLocaleTimeString('en-US', {
+              hour12: false,
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
             });
-            
+
             // Determine speaker from message role: "assistant" = AI, "user" = HUMAN
             const speaker: 'AI' | 'HUMAN' = message.role === "assistant" ? 'AI' : 'HUMAN';
-            
+
             // Clear any existing timeout
             if (transcriptTimeout) {
               clearTimeout(transcriptTimeout);
             }
-            
+
             // Update or create partial transcript
             setPartialTranscript(prev => {
               // If speaker changed, finalize previous and start new
@@ -552,16 +799,16 @@ const InterviewRoom = () => {
                 }]);
                 return { text: message.transcript, speaker, startTime: currentTime };
               }
-              
+
               // Same speaker - accumulate text
               if (prev) {
                 return { ...prev, text: message.transcript };
               }
-              
+
               // New transcript
               return { text: message.transcript, speaker, startTime: currentTime };
             });
-            
+
             // Set timeout to finalize after 1 second of silence
             const timeout = setTimeout(() => {
               setPartialTranscript(prev => {
@@ -576,7 +823,7 @@ const InterviewRoom = () => {
                 return null;
               });
             }, 1000); // 1 second silence threshold
-            
+
             setTranscriptTimeout(timeout);
           }
         });
@@ -592,7 +839,8 @@ const InterviewRoom = () => {
 
       console.log("Starting Vapi with extracted questions:", sessionContext);
 
-      // Start Vapi call - no need to wait for ready event, Vapi handles it internally
+      // Start Vapi call - Vapi will manage its own audio context
+      // Don't create a separate audio context as it conflicts with Vapi's audio management
       await vapi.start({
         name: "AI Interview Assistant",
         transcriber: {
@@ -658,13 +906,14 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
           setInterviewActive(true);
           setConnecting(false);
         }
-      }, 3000);
+      }, 0);
 
     } catch (error: any) {
       console.error("Failed to start interview:", error);
       setConnecting(false);
       setVapiInitialized(false);
       setVapiReady(false);
+      setInterviewStarted(false);
       toast({
         title: "Error",
         description: error.message || "Failed to start the interview. Please try again.",
@@ -680,7 +929,23 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
   };
 
   const endInterview = async () => {
-    // Stop Vapi IMMEDIATELY first to stop AI from speaking
+    isEndingInterview.current = true;
+  
+    if (wakeLock) {
+      try {
+        await wakeLock.release();
+        setWakeLock(null);
+        console.log("Wake lock released");
+      } catch (error) {
+        console.error("Error releasing wake lock:", error);
+      }
+    }
+  
+    if (audioMonitorIntervalRef.current) {
+      clearInterval(audioMonitorIntervalRef.current);
+      audioMonitorIntervalRef.current = null;
+    }
+  
     if (vapiClient) {
       try {
         vapiClient.stop();
@@ -691,121 +956,144 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
       setVapiInitialized(false);
       setVapiReady(false);
     }
-
-    // Stop recording
+  
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
       setIsRecording(false);
     }
-
-    // Stop all media streams
+  
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => track.stop());
       setMediaStream(null);
     }
-
+  
     if (screenStream) {
       screenStream.getTracks().forEach(track => track.stop());
       setScreenStream(null);
     }
-
-    // Update UI state
+  
     setInterviewActive(false);
     setCameraOn(false);
     setMicOn(false);
     setIsSpeaking(false);
-
-    // Upload recording and save transcript
+  
     if (candidate) {
       setIsUploading(true);
-      
+  
       try {
         let recordingUrl = null;
-
-        // Upload recording to Supabase Storage
+  
+        // -------------------------------------------------------------------
+        // FETCH EXISTING ROW TO PRESERVE REQUIRED NOT NULL COLUMNS
+        // -------------------------------------------------------------------
+        const { data: existingRow, error: fetchError } = await supabase
+          .from("Qualified_For_Final_Interview")
+          .select("*")
+          .eq("id", candidate.id)
+          .single();
+  
+        if (fetchError) {
+          console.error("Error fetching existing row:", fetchError);
+        }
+  
+        // Upload Screen Recording
         if (recordingChunks.length > 0) {
-          const recordingBlob = new Blob(recordingChunks, { type: 'video/webm' });
+          const recordingBlob = new Blob(recordingChunks, { type: "video/webm" });
           const fileName = `${candidate.email}_${Date.now()}.webm`;
-
+  
           const { data, error: uploadError } = await supabase.storage
-            .from('interview-recordings')
+            .from("interview-recordings")
             .upload(fileName, recordingBlob, {
-              contentType: 'video/webm',
+              contentType: "video/webm",
               upsert: false,
             });
-
-          if (uploadError) {
-            console.error('Upload error details:', uploadError);
-            
-            let errorMessage = 'Failed to upload recording. Please try again.';
-            
-            if (uploadError.message.includes('row-level security')) {
-              errorMessage = 'Storage permission error. Please contact support.';
-            } else if (uploadError.message.includes('Bucket not found')) {
-              errorMessage = 'Storage bucket not configured. Please contact support.';
-            } else {
-              errorMessage = `Upload failed: ${uploadError.message}`;
-            }
-            
-            toast({
-              title: "Recording Upload Failed",
-              description: errorMessage,
-              variant: "destructive",
-            });
-          } else {
-            // Get public URL
-            const { data: urlData } = supabase.storage
-              .from('interview-recordings')
-              .getPublicUrl(fileName);
-            
-            recordingUrl = urlData.publicUrl;
+  
+          const { data: publicUrlData } = supabase.storage
+            .from("interview-recordings")
+            .getPublicUrl(fileName);
+  
+          recordingUrl = publicUrlData.publicUrl;
+  
+          // -------------------------------------------------------------------
+          // UPDATE SCREEN RECORDING — PRESERVE ALL NOT NULL COLUMNS
+          // -------------------------------------------------------------------
+          await supabase
+            .from("Qualified_For_Final_Interview")
+            .update({
+              Screen_recording: recordingUrl,
+  
+              // REQUIRED NOT-NULL COLUMNS
+              name: existingRow.name,
+              email: existingRow.email,
+              user_id: existingRow.user_id,
+              job_id: existingRow.job_id,
+              phone: existingRow.phone,
+              cv_file_url: existingRow.cv_file_url,
+              ai_score: existingRow.ai_score,
+            })
+            .eq("id", candidate.id);
+  
+          if (!uploadError) {
             setUploadProgress(100);
           }
         }
-
-        // Finalize any pending partial transcript
+  
+        // Save pending partial transcript
         if (partialTranscript) {
-          setTranscript(prev => [...prev, {
-            text: partialTranscript.text.trim(),
-            timestamp: partialTranscript.startTime,
-            speaker: partialTranscript.speaker
-          }]);
+          setTranscript(prev => [
+            ...prev,
+            {
+              text: partialTranscript.text.trim(),
+              timestamp: partialTranscript.startTime,
+              speaker: partialTranscript.speaker,
+            },
+          ]);
         }
-        
-        // Save transcript with speaker labels
-        const fullTranscript = transcript.length > 0 
-          ? transcript.map(t => `[${t.timestamp}] [${t.speaker}]: ${t.text}`).join('\n')
-          : '';
-        
-        // Update interview status to 'Completed' and save transcript/recording
-        const updateData: any = {
-          interview_status: 'Completed',
+  
+        // Build Final Transcript
+        const fullTranscript =
+          transcript.length > 0
+            ? transcript
+                .map(t => `[${t.timestamp}] [${t.speaker}]: ${t.text}`)
+                .join("\n")
+            : "";
+  
+        // -------------------------------------------------------------------
+        // FINAL UPDATE: interview_status + Transcript — PRESERVE NOT NULLS
+        // -------------------------------------------------------------------
+        const updateData = {
+          interview_status: "Completed",
+          Transcript: fullTranscript,
+  
+          // REQUIRED NOT-NULL FIELDS
+          name: existingRow.name,
+          email: existingRow.email,
+          user_id: existingRow.user_id,
+          job_id: existingRow.job_id,
+          phone: existingRow.phone,
+          cv_file_url: existingRow.cv_file_url,
+          ai_score: existingRow.ai_score,
         };
-        
-        // Only include fields that exist in the database schema
-        // Note: If Transcript, Recording URL, or Screen recording columns exist, uncomment below
-        // updateData.Transcript = fullTranscript;
-        // updateData["Recording URL"] = null;
-        // updateData["Screen recording"] = recordingUrl;
-        
-        const { error: updateError } = await supabase
-          .from('Qualified_For_Final_Interview' as any)
+  
+        const { data: updateResult, error: updateError } = await supabase
+          .from("Qualified_For_Final_Interview")
           .update(updateData)
-          .eq('id', candidate.id); // Use ID instead of email to update the specific record
-
+          .eq("id", candidate.id)
+          .select();
+  
         if (updateError) {
           console.error("Error updating interview status:", updateError);
           toast({
             title: "Warning",
-            description: "Interview ended but status could not be updated. Please contact support.",
+            description: "Interview ended but status could not be updated.",
             variant: "destructive",
           });
         } else {
           toast({
             title: "Interview Completed",
-            description: recordingUrl 
-              ? "Interview completed and recording saved successfully. Status updated to Completed." 
-              : "Interview completed. Status updated to Completed. Recording could not be saved.",
+            description: recordingUrl
+              ? "Recording and transcript saved successfully."
+              : "Interview completed. Recording missing.",
           });
         }
       } catch (error) {
@@ -819,17 +1107,16 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
         setIsUploading(false);
         setUploadProgress(0);
         setRecordingChunks([]);
-        
-        // Show thank you screen
         setShowThankYou(true);
-        
-        // Redirect to interview landing page after 5 seconds
+  
         setTimeout(() => {
           navigate("/interview-landing");
         }, 5000);
       }
     }
   };
+  
+  
 
   if (loading) {
     return (
@@ -874,7 +1161,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   Redirecting you back to the landing page in a few seconds...
                 </p>
               </div>
-              <Button 
+              <Button
                 onClick={() => navigate("/interview-landing")}
                 size="lg"
                 className="mt-4"
@@ -970,16 +1257,16 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                     <div className="text-sm font-medium text-destructive mb-3">{mediaError}</div>
                     <div className="flex gap-2">
-                      <Button 
-                        onClick={retryMediaAccess} 
-                        size="sm" 
+                      <Button
+                        onClick={retryMediaAccess}
+                        size="sm"
                         variant="outline"
                       >
                         Retry
                       </Button>
-                      <Button 
-                        onClick={() => setMediaError(null)} 
-                        size="sm" 
+                      <Button
+                        onClick={() => setMediaError(null)}
+                        size="sm"
                         variant="ghost"
                       >
                         Dismiss
@@ -1008,7 +1295,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                     <span className="text-sm font-medium">{uploadProgress}%</span>
                   </div>
                   <div className="w-full bg-muted rounded-full h-2">
-                    <div 
+                    <div
                       className="bg-primary h-2 rounded-full transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
@@ -1018,9 +1305,9 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
 
               <div className="flex gap-4">
                 {!interviewActive ? (
-                  <Button 
-                    onClick={startInterview} 
-                    size="lg" 
+                  <Button
+                    onClick={startInterview}
+                    size="lg"
                     className="min-w-48"
                     disabled={isUploading || vapiInitialized}
                   >
@@ -1028,9 +1315,9 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   </Button>
                 ) : (
                   <>
-                    <Button 
-                      onClick={toggleCamera} 
-                      size="lg" 
+                    <Button
+                      onClick={toggleCamera}
+                      size="lg"
                       variant="outline"
                       className="gap-2"
                       disabled={isUploading}
@@ -1038,9 +1325,9 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                       {cameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
                       {cameraOn ? "Camera On" : "Camera Off"}
                     </Button>
-                    <Button 
-                      onClick={toggleMic} 
-                      size="lg" 
+                    <Button
+                      onClick={toggleMic}
+                      size="lg"
                       variant="outline"
                       className="gap-2"
                       disabled={isUploading}
@@ -1048,10 +1335,10 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                       {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
                       {micOn ? "Mic On" : "Mic Off"}
                     </Button>
-                    <Button 
-                      onClick={endInterview} 
-                      size="lg" 
-                      variant="destructive" 
+                    <Button
+                      onClick={endInterview}
+                      size="lg"
+                      variant="destructive"
                       className="min-w-48"
                       disabled={isUploading}
                     >
@@ -1070,7 +1357,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
             <CardTitle>Interview Transcript</CardTitle>
           </CardHeader>
           <CardContent>
-            <div 
+            <div
               ref={transcriptContainerRef}
               className="space-y-3 max-h-80 overflow-y-auto p-4 bg-muted/30 rounded-lg border"
               style={{ scrollBehavior: 'smooth' }}
