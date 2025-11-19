@@ -13,12 +13,21 @@ import {
   MapPin,
   Users,
   Share2,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Eye,
+  Pause,
+  Lock,
+  FileText,
+  CheckCircle,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
@@ -101,6 +110,69 @@ const Jobs = () => {
       title: "Link Copied!",
       description: "Job link copied to clipboard. Share it with candidates!",
     });
+  };
+
+  const handleEditJob = (jobId: string) => {
+    navigate(`/edit-job/${jobId}`);
+  };
+
+  const handleViewJob = (jobId: string) => {
+    navigate(`/jobs/${jobId}`);
+  };
+
+  const handleUpdateJobStatus = async (jobId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from("jobs")
+        .update({ status: newStatus })
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `Job ${newStatus === 'draft' ? 'moved to draft' : newStatus === 'paused' ? 'paused' : 'closed'} successfully.`,
+      });
+
+      // Refresh jobs list
+      fetchJobs();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      // Confirm deletion
+      if (!window.confirm("Are you sure you want to delete this job? This action cannot be undone.")) {
+        return;
+      }
+
+      const { error } = await supabase
+        .from("jobs")
+        .delete()
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Job deleted successfully.",
+      });
+
+      // Refresh jobs list
+      fetchJobs();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -226,17 +298,84 @@ const Jobs = () => {
               filteredJobs.map((job, index) => (
                 <Card
                   key={job.id}
-                  className="hover-scale hover-glow cursor-pointer transition-all animate-fade-in-up h-full"
+                  className="hover-scale hover-glow transition-all animate-fade-in-up h-full"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <Link to={`/jobs/${job.id}`} className="flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <Link to={`/job/${job.id}`} className="flex-1">
                         <CardTitle className="text-lg hover:text-primary transition-colors">
                           {job.title}
                         </CardTitle>
                       </Link>
-                      {getStatusBadge(job.status)}
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(job.status)}
+                        
+                        {/* Three-dot Menu */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48 bg-popover">
+                            <DropdownMenuItem onClick={() => handleViewJob(job.id)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEditJob(job.id)}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit Job
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            {/* Activate Job - for paused or closed jobs */}
+                            {(job.status === 'paused' || job.status === 'closed') && (
+                              <DropdownMenuItem onClick={() => handleUpdateJobStatus(job.id, 'active')}>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Activate Job
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {job.status !== 'draft' && job.status !== 'paused' && job.status !== 'closed' && (
+                              <DropdownMenuItem onClick={() => handleUpdateJobStatus(job.id, 'draft')}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                Move to Draft
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {job.status !== 'paused' && job.status !== 'draft' && job.status !== 'closed' && (
+                              <DropdownMenuItem onClick={() => handleUpdateJobStatus(job.id, 'paused')}>
+                                <Pause className="h-4 w-4 mr-2" />
+                                Pause Job
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {job.status !== 'closed' && (
+                              <DropdownMenuItem onClick={() => handleUpdateJobStatus(job.id, 'closed')}>
+                                <Lock className="h-4 w-4 mr-2" />
+                                Close Job
+                              </DropdownMenuItem>
+                            )}
+                            
+                            <DropdownMenuSeparator />
+                            
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteJob(job.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Job
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">

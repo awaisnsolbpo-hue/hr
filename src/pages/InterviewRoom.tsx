@@ -7,7 +7,7 @@ import { createVapiClient, type VapiSessionContext } from "@/lib/vapiClient";
 import { type CandidateRecord } from "@/lib/interviewTypes";
 import { useToast } from "@/hooks/use-toast";
 import InterviewBadge from "@/components/InterviewBadge";
-import { Video, Mic, VideoOff, MicOff, User, Sparkles, Volume2 } from "lucide-react";
+import { Video, Mic, VideoOff, MicOff, User, Sparkles, Volume2, LogOut } from "lucide-react";
 
 const InterviewRoom = () => {
   const [searchParams] = useSearchParams();
@@ -62,6 +62,13 @@ const InterviewRoom = () => {
   // Handle page refresh/close - mark interview as completed if started
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Prevent closing if currently uploading
+      if (isUploading) {
+        e.preventDefault();
+        e.returnValue = 'Recording is being uploaded. Please wait for the upload to complete before leaving.';
+        return;
+      }
+
       if (interviewStarted && candidate && !isEndingInterview.current) {
         // Show confirmation dialog
         e.preventDefault();
@@ -158,7 +165,7 @@ const InterviewRoom = () => {
       window.removeEventListener('unload', handleUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [interviewStarted, candidate, interviewActive, mediaStream]);
+  }, [interviewStarted, candidate, interviewActive, mediaStream, isUploading]);
 
   // Helper function to mark interview as completed
   const markInterviewAsCompleted = async (candidateId: string, isRefresh: boolean = false) => {
@@ -928,6 +935,28 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const handleExit = () => {
+    if (isUploading) {
+      toast({
+        title: "Upload in Progress",
+        description: "Please wait for the recording to finish uploading before exiting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (interviewActive) {
+      toast({
+        title: "Interview Active",
+        description: "Please end the interview before exiting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    navigate("/interview-landing");
+  };
+
   const endInterview = async () => {
     isEndingInterview.current = true;
   
@@ -998,6 +1027,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
   
         // Upload Screen Recording
         if (recordingChunks.length > 0) {
+          console.log("Starting screen recording upload...");
           const recordingBlob = new Blob(recordingChunks, { type: "video/webm" });
           const fileName = `${candidate.email}_${Date.now()}.webm`;
   
@@ -1008,34 +1038,51 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
               upsert: false,
             });
   
-          const { data: publicUrlData } = supabase.storage
-            .from("interview-recordings")
-            .getPublicUrl(fileName);
+          if (uploadError) {
+            console.error("Screen recording upload error:", uploadError);
+            toast({
+              title: "Upload Error",
+              description: "Failed to upload screen recording. Please try again.",
+              variant: "destructive",
+            });
+          } else {
+            console.log("Screen recording uploaded successfully:", data);
+            
+            const { data: publicUrlData } = supabase.storage
+              .from("interview-recordings")
+              .getPublicUrl(fileName);
   
-          recordingUrl = publicUrlData.publicUrl;
+            recordingUrl = publicUrlData.publicUrl;
+            console.log("Screen recording URL:", recordingUrl);
   
-          // -------------------------------------------------------------------
-          // UPDATE SCREEN RECORDING — PRESERVE ALL NOT NULL COLUMNS
-          // -------------------------------------------------------------------
-          await supabase
-            .from("Qualified_For_Final_Interview")
-            .update({
-              Screen_recording: recordingUrl,
+            // -------------------------------------------------------------------
+            // UPDATE SCREEN RECORDING — PRESERVE ALL NOT NULL COLUMNS
+            // -------------------------------------------------------------------
+            const { error: recordingUpdateError } = await supabase
+              .from("Qualified_For_Final_Interview")
+              .update({
+                Screen_recording: recordingUrl,
   
-              // REQUIRED NOT-NULL COLUMNS
-              name: existingRow.name,
-              email: existingRow.email,
-              user_id: existingRow.user_id,
-              job_id: existingRow.job_id,
-              phone: existingRow.phone,
-              cv_file_url: existingRow.cv_file_url,
-              ai_score: existingRow.ai_score,
-            })
-            .eq("id", candidate.id);
+                // REQUIRED NOT-NULL COLUMNS
+                name: existingRow.name,
+                email: existingRow.email,
+                user_id: existingRow.user_id,
+                job_id: existingRow.job_id,
+                phone: existingRow.phone,
+                cv_file_url: existingRow.cv_file_url,
+                ai_score: existingRow.ai_score,
+              })
+              .eq("id", candidate.id);
   
-          if (!uploadError) {
-            setUploadProgress(100);
+            if (recordingUpdateError) {
+              console.error("Error updating screen recording URL:", recordingUpdateError);
+            } else {
+              console.log("Screen recording URL saved to database");
+              setUploadProgress(100);
+            }
           }
+        } else {
+          console.warn("No recording chunks available to upload");
         }
   
         // Save pending partial transcript
@@ -1089,11 +1136,12 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
             variant: "destructive",
           });
         } else {
+          console.log("Interview status updated successfully");
           toast({
             title: "Interview Completed",
             description: recordingUrl
               ? "Recording and transcript saved successfully."
-              : "Interview completed. Recording missing.",
+              : "Interview completed. Recording upload may have failed.",
           });
         }
       } catch (error) {
@@ -1191,7 +1239,19 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   </div>
                 </CardDescription>
               </div>
-              <InterviewBadge status={interviewActive ? "active" : "scheduled"} />
+              <div className="flex items-center gap-3">
+                <InterviewBadge status={interviewActive ? "active" : "scheduled"} />
+                <Button
+                  onClick={handleExit}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={isUploading}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Exit
+                </Button>
+              </div>
             </div>
           </CardHeader>
         </Card>
@@ -1300,6 +1360,9 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Please do not close this page until upload is complete
+                  </p>
                 </div>
               )}
 

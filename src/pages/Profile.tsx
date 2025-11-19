@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, ArrowLeft, Building2, Save, Loader2 } from "lucide-react";
+import { Sparkles, ArrowLeft, Building2, Save, Loader2, Camera } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,9 +15,11 @@ const Profile = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [profile, setProfile] = useState({
     full_name: "",
     email: "",
+    profile_picture_url: "",
     company_name: "",
     company_description: "",
     company_website: "",
@@ -30,7 +32,9 @@ const Profile = () => {
     company_city: "",
     company_country: "",
     company_linkedin_url: "",
-    company_twitter_url: "",
+    company_instagram_url: "",
+    company_facebook_url: "",
+    privacy_policy_url: "",
   });
 
   useEffect(() => {
@@ -57,6 +61,7 @@ const Profile = () => {
         setProfile({
           full_name: data.full_name || "",
           email: data.email || "",
+          profile_picture_url: data.profile_picture_url || "",
           company_name: data.company_name || "",
           company_description: data.company_description || "",
           company_website: data.company_website || "",
@@ -69,7 +74,9 @@ const Profile = () => {
           company_city: data.company_city || "",
           company_country: data.company_country || "",
           company_linkedin_url: data.company_linkedin_url || "",
-          company_twitter_url: data.company_twitter_url || "",
+          company_instagram_url: data.company_instagram_url || "",
+          company_facebook_url: data.company_facebook_url || "",
+          privacy_policy_url: data.privacy_policy_url || "",
         });
       }
     } catch (error: any) {
@@ -81,6 +88,85 @@ const Profile = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload an image file",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please upload an image smaller than 5MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Create unique file name
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `profile-pictures/${fileName}`;
+
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) {
+        if (uploadError.message.includes('not found')) {
+          throw new Error('Storage bucket not configured. Please create an "avatars" bucket in Supabase Storage.');
+        }
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update profile with new picture URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ profile_picture_url: publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile({ ...profile, profile_picture_url: publicUrl });
+
+      toast({
+        title: "Success!",
+        description: "Profile picture updated successfully",
+      });
+    } catch (error: any) {
+      console.error("Error uploading profile picture:", error);
+      toast({
+        title: "Upload Error",
+        description: error.message || "Failed to upload profile picture",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      // Reset the file input
+      event.target.value = '';
     }
   };
 
@@ -174,11 +260,31 @@ const Profile = () => {
           <Card className="shadow-elegant">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-2xl">
-                    {getCompanyInitials(profile.company_name)}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-20 w-20">
+                    {profile.profile_picture_url ? (
+                      <AvatarImage src={profile.profile_picture_url} alt={profile.full_name || "Profile"} />
+                    ) : null}
+                    <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-2xl">
+                      {getCompanyInitials(profile.company_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <label htmlFor="profile-picture-upload" className="absolute bottom-0 right-0 p-1.5 rounded-full bg-primary text-primary-foreground cursor-pointer hover:bg-primary/90 transition-colors shadow-lg">
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Camera className="h-4 w-4" />
+                    )}
+                  </label>
+                  <input
+                    id="profile-picture-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfilePictureUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </div>
                 <div>
                   <h2 className="text-xl font-semibold">{profile.company_name || "Your Company"}</h2>
                   <p className="text-sm text-muted-foreground">{profile.email}</p>
@@ -207,9 +313,10 @@ const Profile = () => {
                   <Label htmlFor="email">Email</Label>
                   <Input 
                     id="email"
-                    value={profile.email} 
-                    disabled 
-                    className="bg-muted"
+                    value={profile.email}
+                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                    placeholder="Enter your email"
+                    type="email"
                   />
                 </div>
               </div>
@@ -289,6 +396,17 @@ const Profile = () => {
                   />
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="privacy_policy_url">Privacy Policy URL</Label>
+                <Input
+                  id="privacy_policy_url"
+                  value={profile.privacy_policy_url}
+                  onChange={(e) => setProfile({ ...profile, privacy_policy_url: e.target.value })}
+                  placeholder="https://example.com/privacy"
+                  type="url"
+                />
+              </div>
             </CardContent>
           </Card>
 
@@ -362,25 +480,36 @@ const Profile = () => {
               <CardTitle>Social Media</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="company_linkedin_url">LinkedIn URL</Label>
+                <Input
+                  id="company_linkedin_url"
+                  value={profile.company_linkedin_url}
+                  onChange={(e) => setProfile({ ...profile, company_linkedin_url: e.target.value })}
+                  placeholder="https://linkedin.com/company/..."
+                  type="url"
+                />
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company_linkedin_url">LinkedIn URL</Label>
+                  <Label htmlFor="company_instagram_url">Instagram URL</Label>
                   <Input
-                    id="company_linkedin_url"
-                    value={profile.company_linkedin_url}
-                    onChange={(e) => setProfile({ ...profile, company_linkedin_url: e.target.value })}
-                    placeholder="https://linkedin.com/company/..."
+                    id="company_instagram_url"
+                    value={profile.company_instagram_url}
+                    onChange={(e) => setProfile({ ...profile, company_instagram_url: e.target.value })}
+                    placeholder="https://instagram.com/..."
                     type="url"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="company_twitter_url">Twitter/X URL</Label>
+                  <Label htmlFor="company_facebook_url">Facebook URL</Label>
                   <Input
-                    id="company_twitter_url"
-                    value={profile.company_twitter_url}
-                    onChange={(e) => setProfile({ ...profile, company_twitter_url: e.target.value })}
-                    placeholder="https://twitter.com/..."
+                    id="company_facebook_url"
+                    value={profile.company_facebook_url}
+                    onChange={(e) => setProfile({ ...profile, company_facebook_url: e.target.value })}
+                    placeholder="https://facebook.com/..."
                     type="url"
                   />
                 </div>

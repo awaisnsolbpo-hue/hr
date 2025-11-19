@@ -12,6 +12,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import Jobs from "./pages/Jobs";
 import CreateJob from "./pages/CreateJob";
+import EditJob from "./pages/Editjob";
 import Candidates from "./pages/Candidates";
 import ImportCandidates from "./pages/ImportCandidates";
 import JobDetail from "./pages/JobDetail";
@@ -27,6 +28,7 @@ import IntegrationsSettings from "./pages/IntegrationsSettings";
 import ScheduledMeetings from "./pages/ScheduledMeetings";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import ActivityLogs from "./pages/ActivityLogs";
 import CandidateSearch from "./pages/Candidatesearch";
 import AdvancedSearch from "./pages/AdvancedSearch";
 import InterviewLandingPage from "./pages/InterviewLandingPage";
@@ -50,22 +52,35 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          {/* Public Routes */}
+          {/* ============================================
+              PUBLIC ROUTES - No Authentication Required
+          ============================================ */}
+          
+          {/* Landing & Auth Pages */}
           <Route path="/" element={<Index />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           
-          {/* Public Job Application Routes */}
+          {/* Public Job Application Routes - Candidates can view and apply */}
           <Route path="/jobs/public/:jobId" element={<PublicJobView />} />
           <Route path="/upload/:linkCode" element={<PublicUpload />} />
           
-          {/* Protected Routes */}
+          {/* Public Interview Routes - Candidates access their interviews */}
+          <Route path="/interview-landing" element={<InterviewLandingPage />} />
+          <Route path="/interview-room" element={<InterviewRoom />} />
+          
+          {/* ============================================
+              PROTECTED ROUTES - Authentication Required
+          ============================================ */}
+          
+          {/* Dashboard & Profile */}
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/activity-logs" element={<ActivityLogs />} />
           
-          {/* NEW: Dashboard Metric Pages */}
+          {/* Dashboard Metric Pages - Detailed views of dashboard stats */}
           <Route path="/dashboard/active-jobs" element={<ActiveJobsPage />} />
           <Route path="/dashboard/total-candidates" element={<TotalCandidatesPage />} />
           <Route path="/dashboard/qualified" element={<InitialInterviewQualifiedPage />} />
@@ -73,37 +88,60 @@ const App = () => (
           <Route path="/dashboard/shortlisted" element={<ShortlistedCandidatesPage />} />
           <Route path="/dashboard/success-rate" element={<SuccessRatePage />} />
           
-          {/* Job Management Routes */}
+          {/* ============================================
+              JOB MANAGEMENT ROUTES
+          ============================================ */}
+          
+          {/* Job List & Creation */}
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/create-job" element={<CreateJob />} />
+          
+          {/* Job View & Edit - :jobId is the job identifier */}
+          <Route path="/jobs/:jobId" element={<JobDetail />} />
+          <Route path="/edit-job/:jobId" element={<EditJob />} />
+          
+          {/* Legacy route support - redirects to new format */}
           <Route path="/job/:jobId" element={<JobDetail />} />
           
-          {/* Candidate Management Routes */}
+          {/* ============================================
+              CANDIDATE MANAGEMENT ROUTES
+          ============================================ */}
+          
+          {/* Candidate Views */}
           <Route path="/candidates" element={<Candidates />} />
           <Route path="/import-candidates" element={<ImportCandidates />} />
           <Route path="/search-candidates" element={<CandidateSearch />} />
           <Route path="/advanced-search" element={<AdvancedSearch />} />
           
-          {/* Interview Routes */}
+          {/* ============================================
+              INTERVIEW MANAGEMENT ROUTES
+          ============================================ */}
+          
+          {/* Interview Dashboard & Scheduling */}
           <Route path="/interviews" element={<Interviews />} />
           <Route path="/scheduled-meetings" element={<ScheduledMeetings />} />
           
-          {/* AI Interview Routes */}
-          <Route path="/interview-landing" element={<InterviewLandingPage />} />
-          <Route path="/interview-room" element={<InterviewRoom />} />
+          {/* ============================================
+              INTEGRATION ROUTES
+          ============================================ */}
           
-          {/* Integration Routes */}
+          {/* Integration Pages */}
           <Route path="/gmail-import" element={<GmailImport />} />
           <Route path="/connect-linkedin" element={<ConnectLinkedin />} />
-          {/* <Route path="/linkedin-scraper" element={<LinkedinScraper />} /> */}
           <Route path="/integrations-settings" element={<IntegrationsSettings />} />
           
-          {/* OAuth Callback Routes */}
+          {/* OAuth Callback Routes - Handle authentication returns */}
           <Route path="/gmail-callback" element={<GmailCallback />} />
           <Route path="/linkedin-callback" element={<LinkedinCallback />} />
           
-          {/* 404 Page */}
+          {/* ============================================
+              ERROR HANDLING
+          ============================================ */}
+          
+          {/* 404 Not Found */}
           <Route path="/404" element={<NotFound />} />
+          
+          {/* Catch All - Redirect unknown routes to 404 */}
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Routes>
       </BrowserRouter>

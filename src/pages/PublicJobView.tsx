@@ -12,6 +12,8 @@ import {
     Building2,
     ArrowRight,
     CheckCircle,
+    Globe,
+    Users,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +32,19 @@ interface Job {
     user_id: string;
 }
 
+interface CompanyProfile {
+    id: string;
+    email: string;
+    full_name?: string;
+    company_name?: string;
+    company_description?: string;
+    company_website?: string;
+    company_size?: string;
+    industry?: string;
+    profile_image_url?: string;
+    created_at: string;
+}
+
 const PublicJobView = () => {
     const { jobId } = useParams();
     const navigate = useNavigate();
@@ -39,6 +54,7 @@ const PublicJobView = () => {
     const [uploadLink, setUploadLink] = useState<string | null>(null);
     const [hasApplied, setHasApplied] = useState(false);
     const [checkingApplication, setCheckingApplication] = useState(true);
+    const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
     useEffect(() => {
         if (jobId) {
@@ -63,6 +79,12 @@ const PublicJobView = () => {
 
                 if (!error && data) {
                     setHasApplied(true);
+                    
+                    // Show info toast that they've already applied
+                    toast({
+                        title: "Already Applied",
+                        description: "You have already submitted an application for this position.",
+                    });
                 }
             }
         } catch (error) {
@@ -126,6 +148,19 @@ const PublicJobView = () => {
             }
 
             setJob(jobData);
+
+            // Fetch company profile information
+            const { data: profileData, error: profileError } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", jobData.user_id)
+                .single();
+
+            if (profileError) {
+                console.error("Error fetching company profile:", profileError);
+            } else {
+                setCompanyProfile(profileData);
+            }
 
             // Check if there's an existing upload link for this job
             const { data: linkData, error: linkError } = await supabase
@@ -324,6 +359,83 @@ const PublicJobView = () => {
                             </div>
                         </CardHeader>
                     </Card>
+
+                    {/* Company Profile */}
+                    {companyProfile && (
+                        <Card className="shadow-elegant animate-fade-in">
+                            <CardHeader>
+                                <CardTitle>About the Company</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-6">
+                                    {/* Company Header with Logo */}
+                                    <div className="flex items-start gap-4">
+                                        {companyProfile.profile_image_url ? (
+                                            <img
+                                                src={companyProfile.profile_image_url}
+                                                alt={companyProfile.company_name || "Company"}
+                                                className="w-20 h-20 rounded-lg object-cover border-2 border-border"
+                                            />
+                                        ) : (
+                                            <div className="w-20 h-20 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center border-2 border-border">
+                                                <Building2 className="h-10 w-10 text-primary" />
+                                            </div>
+                                        )}
+                                        <div className="flex-1">
+                                            <h3 className="text-2xl font-bold mb-1">
+                                                {companyProfile.company_name || companyProfile.full_name || "Company"}
+                                            </h3>
+                                            {companyProfile.industry && (
+                                                <p className="text-muted-foreground">
+                                                    {companyProfile.industry}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Company Description */}
+                                    {companyProfile.company_description && (
+                                        <div>
+                                            <p className="text-muted-foreground whitespace-pre-wrap">
+                                                {companyProfile.company_description}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Company Details */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {companyProfile.company_website && (
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                <Globe className="h-4 w-4" />
+                                                <a
+                                                    href={companyProfile.company_website}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-primary hover:underline"
+                                                >
+                                                    {companyProfile.company_website}
+                                                </a>
+                                            </div>
+                                        )}
+
+                                        {companyProfile.company_size && (
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                <Users className="h-4 w-4" />
+                                                <span>{companyProfile.company_size} employees</span>
+                                            </div>
+                                        )}
+
+                                        {companyProfile.email && (
+                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                <Building2 className="h-4 w-4" />
+                                                <span>{companyProfile.email}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Job Description */}
                     <Card className="shadow-elegant animate-fade-in-up">

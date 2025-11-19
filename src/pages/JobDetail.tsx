@@ -26,6 +26,13 @@ import {
     Phone,
     Users,
     Calendar as CalendarIcon,
+    MoreVertical,
+    Edit,
+    Trash2,
+    Pause,
+    FileText,
+    Lock,
+    Eye,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +56,13 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface Job {
     id: string;
@@ -205,6 +219,83 @@ const JobDetailWithCompany = () => {
         }
     };
 
+    const handleEditJob = () => {
+        if (jobId) {
+            navigate(`/edit-job/${jobId}`);
+        }
+    };
+
+    const handleUpdateJobStatus = async (newStatus: string) => {
+        if (!job) return;
+
+        try {
+            const updateData: any = { status: newStatus };
+            
+            // If closing, add closed_at timestamp
+            if (newStatus === 'closed') {
+                updateData.closed_at = new Date().toISOString();
+            }
+
+            const { error } = await supabase
+                .from("jobs")
+                .update(updateData)
+                .eq("id", job.id);
+
+            if (error) throw error;
+
+            setJob({
+                ...job,
+                ...updateData,
+            });
+
+            toast({
+                title: "Success",
+                description: `Job ${newStatus === 'draft' ? 'moved to draft' : newStatus === 'paused' ? 'paused' : 'closed'} successfully.`,
+            });
+
+            // Refresh job details
+            fetchJobDetails();
+        } catch (error: any) {
+            toast({
+                title: "Error",
+                description: error.message,
+                variant: "destructive",
+            });
+        }
+    };
+
+    const handleDeleteJob = async () => {
+        if (!job) return;
+
+        try {
+            // Confirm deletion
+            if (!window.confirm("Are you sure you want to delete this job? This action cannot be undone.")) {
+                return;
+            }
+
+            const { error } = await supabase
+                .from("jobs")
+                .delete()
+                .eq("id", job.id);
+
+            if (error) throw error;
+
+            toast({
+                title: "Success",
+                description: "Job deleted successfully.",
+            });
+
+            // Navigate back to jobs list
+            navigate("/jobs");
+        } catch (error: any) {
+            toast({
+                title: "Error",
+                description: error.message,
+                variant: "destructive",
+            });
+        }
+    };
+
     const getStatusBadge = (status: string) => {
         const variants: Record<
             string,
@@ -214,6 +305,7 @@ const JobDetailWithCompany = () => {
             closed: { variant: "secondary", icon: XCircle },
             draft: { variant: "outline", icon: null },
             archived: { variant: "secondary", icon: null },
+            paused: { variant: "secondary", icon: null },
         };
         const config = variants[status] || variants.draft;
         const Icon = config.icon;
@@ -305,7 +397,7 @@ const JobDetailWithCompany = () => {
             {/* Main Content */}
             <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
                 <div className="space-y-6">
-                    {/* Company Profile Header - NEW */}
+                    {/* Company Profile Header */}
                     {companyProfile && (
                         <Card className="hover-glow cursor-pointer" onClick={() => setShowCompanyModal(true)}>
                             <CardContent className="pt-6">
@@ -335,7 +427,7 @@ const JobDetailWithCompany = () => {
                     {/* Job Details */}
                     <Card>
                         <CardHeader>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-4">
                                 <div className="flex-1">
                                     <CardTitle className="text-2xl">{job.title}</CardTitle>
                                     <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -349,38 +441,98 @@ const JobDetailWithCompany = () => {
                                     </div>
                                 </div>
 
-                                {job.status === "active" && (
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="destructive" size="lg" disabled={closing}>
-                                                <XCircle className="h-4 w-4 mr-2" />
-                                                {closing ? "Closing..." : "Close Job"}
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-2">
+                                    {/* Close Job Button - Only for Active Jobs */}
+                                    {job.status === "active" && (
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="destructive" size="default" disabled={closing}>
+                                                    <XCircle className="h-4 w-4 mr-2" />
+                                                    {closing ? "Closing..." : "Close Job"}
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Close This Job?</AlertDialogTitle>
+                                                    <AlertDialogDescription className="space-y-2">
+                                                        <p>This action will:</p>
+                                                        <ul className="list-disc list-inside space-y-1 mt-2">
+                                                            <li>Mark this job as closed</li>
+                                                            <li>Stop accepting new applications</li>
+                                                            <li className="font-medium">Job data will remain in database permanently</li>
+                                                        </ul>
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                    <AlertDialogAction
+                                                        onClick={handleCloseJob}
+                                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                    >
+                                                        Yes, Close Job
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    )}
+
+                                    {/* Three-Dot Menu */}
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" size="default">
+                                                <MoreVertical className="h-4 w-4" />
                                             </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Close This Job?</AlertDialogTitle>
-                                                <AlertDialogDescription className="space-y-2">
-                                                    <p>This action will:</p>
-                                                    <ul className="list-disc list-inside space-y-1 mt-2">
-                                                        <li>Mark this job as closed</li>
-                                                        <li>Stop accepting new applications</li>
-                                                        <li className="font-medium">Job data will remain in database permanently</li>
-                                                    </ul>
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                <AlertDialogAction
-                                                    onClick={handleCloseJob}
-                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                >
-                                                    Yes, Close Job
-                                                </AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                )}
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48 bg-popover">
+                                            <DropdownMenuItem onClick={handleEditJob}>
+                                                <Edit className="h-4 w-4 mr-2" />
+                                                Edit Job
+                                            </DropdownMenuItem>
+                                            
+                                            <DropdownMenuSeparator />
+                                            
+                                            {/* Activate Job - for paused or closed jobs */}
+                                            {(job.status === 'paused' || job.status === 'closed') && (
+                                                <DropdownMenuItem onClick={() => handleUpdateJobStatus('active')}>
+                                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                                    Activate Job
+                                                </DropdownMenuItem>
+                                            )}
+                                            
+                                            {job.status !== 'draft' && job.status !== 'closed' && job.status !== 'paused' && (
+                                                <DropdownMenuItem onClick={() => handleUpdateJobStatus('draft')}>
+                                                    <FileText className="h-4 w-4 mr-2" />
+                                                    Move to Draft
+                                                </DropdownMenuItem>
+                                            )}
+                                            
+                                            {job.status !== 'paused' && job.status !== 'draft' && job.status !== 'closed' && (
+                                                <DropdownMenuItem onClick={() => handleUpdateJobStatus('paused')}>
+                                                    <Pause className="h-4 w-4 mr-2" />
+                                                    Pause Job
+                                                </DropdownMenuItem>
+                                            )}
+                                            
+                                            {job.status !== 'closed' && (
+                                                <DropdownMenuItem onClick={() => handleUpdateJobStatus('closed')}>
+                                                    <Lock className="h-4 w-4 mr-2" />
+                                                    Close Job
+                                                </DropdownMenuItem>
+                                            )}
+                                            
+                                            <DropdownMenuSeparator />
+                                            
+                                            <DropdownMenuItem 
+                                                onClick={handleDeleteJob}
+                                                className="text-destructive focus:text-destructive"
+                                            >
+                                                <Trash2 className="h-4 w-4 mr-2" />
+                                                Delete Job
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
                             </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -422,7 +574,7 @@ const JobDetailWithCompany = () => {
                                 )}
                             </div>
 
-                            {/* Skills Section - NEW */}
+                            {/* Skills Section */}
                             {(job.required_skills?.length || job.preferred_skills?.length) && (
                                 <div className="border-t pt-4 space-y-3">
                                     {job.required_skills && job.required_skills.length > 0 && (
@@ -534,7 +686,7 @@ const JobDetailWithCompany = () => {
                 </div>
             </main>
 
-            {/* Company Profile Modal - NEW */}
+            {/* Company Profile Modal */}
             <Dialog open={showCompanyModal} onOpenChange={setShowCompanyModal}>
                 <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader>

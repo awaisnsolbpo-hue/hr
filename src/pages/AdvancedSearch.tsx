@@ -17,6 +17,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,18 +29,40 @@ import {
   Phone,
   Briefcase,
   Calendar,
-  FileText,
   Star,
-  MapPin,
   ArrowLeft,
   Download,
   ExternalLink,
   Sparkles,
   X,
   SlidersHorizontal,
+  MoreVertical,
+  Eye,
+  MoveRight,
+  PenSquare,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface CandidateData {
   id: string;
@@ -55,9 +78,12 @@ interface CandidateData {
   user_id: string;
   status?: string;
   interview_status?: string;
+  interview_date?: string;
+  interview_result?: string;
   created_at: string;
   source: string;
   linkedin_profile_url?: string;
+  Analysis?: string;
 }
 
 interface Job {
@@ -74,6 +100,19 @@ const AdvancedSearch = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateData | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [cvViewerCandidate, setCvViewerCandidate] = useState<CandidateData | null>(null);
+  const [editCandidate, setEditCandidate] = useState<CandidateData | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<CandidateData | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    interview_status: "",
+    ai_score: "",
+    notes: "",
+  });
 
   // Search filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -102,6 +141,19 @@ const AdvancedSearch = () => {
     selectedSkill,
     candidates,
   ]);
+
+  useEffect(() => {
+    if (editCandidate) {
+      setEditForm({
+        name: editCandidate.name || "",
+        email: editCandidate.email || "",
+        phone: editCandidate.phone || "",
+        interview_status: editCandidate.interview_status || "",
+        ai_score: editCandidate.ai_score?.toString() || "",
+        notes: editCandidate.Analysis || "",
+      });
+    }
+  }, [editCandidate]);
 
   const loadData = async () => {
     setLoading(true);
@@ -275,8 +327,195 @@ const AdvancedSearch = () => {
       .slice(0, 2);
   };
 
+  const getScore = (candidate: CandidateData) => {
+    if (candidate.ai_score != null) return candidate.ai_score;
+    return null;
+  };
+
+  const getTableNameForCandidate = (candidate: CandidateData) => {
+    switch (candidate.source) {
+      case "Applicant":
+        return "Applicant";
+      case "Client":
+        return "Client";
+      case "Shortlisted":
+        return "Shortlisted_candidates";
+      case "Final Interview":
+        return "Qualified_For_Final_Interview";
+      default:
+        return "Applicant";
+    }
+  };
+
   const handleDownloadCV = (cvUrl: string) => {
-    window.open(cvUrl, "_blank");
+    const link = document.createElement("a");
+    link.href = cvUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleMoveCandidate = async (candidate: CandidateData, destination: "qualified" | "shortlisted") => {
+    try {
+      setActionLoadingId(candidate.id);
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth?.user) {
+        navigate("/login");
+        return;
+      }
+
+      const payload = {
+        id: candidate.id,
+        name: candidate.name,
+        email: candidate.email,
+        phone: candidate.phone || null,
+        ai_score: getScore(candidate),
+        cv_file_url: candidate.cv_file_url || null,
+        job_id: candidate.job_id || null,
+        user_id: auth.user.id,
+        interview_status: candidate.interview_status || null,
+        interview_date: candidate.interview_date || null,
+        interview_result: candidate.interview_result || null,
+        status: candidate.source,
+        notes: candidate.Analysis || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const tableName = destination === "qualified" ? "Qualified_For_Final_Interview" : "Shortlisted_candidates";
+      const { error } = await supabase.from(tableName as any).upsert(payload);
+
+      if (error) throw error;
+
+      const newSource = destination === "qualified" ? "Final Interview" : "Shortlisted";
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidate.id
+            ? {
+                ...c,
+                source: newSource,
+              }
+            : c
+        )
+      );
+      setFilteredCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidate.id
+            ? {
+                ...c,
+                source: newSource,
+              }
+            : c
+        )
+      );
+
+      toast({
+        title: "Candidate updated",
+        description: `Moved to ${destination === "qualified" ? "Initial Interview Qualified" : "Shortlisted"} stage.`,
+      });
+    } catch (error: any) {
+      console.error("Move candidate error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Unable to move candidate",
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editCandidate) return;
+
+    try {
+      setEditLoading(true);
+      const updates: any = {
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+        phone: editForm.phone.trim() || null,
+        interview_status: editForm.interview_status.trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (editForm.ai_score) {
+        const parsed = Number(editForm.ai_score);
+        updates.ai_score = Number.isNaN(parsed) ? null : parsed;
+      } else {
+        updates.ai_score = null;
+      }
+
+      if (editForm.notes) {
+        updates.notes = editForm.notes;
+      }
+
+      const tableName = getTableNameForCandidate(editCandidate);
+      const { error } = await supabase.from(tableName as any).update(updates).eq("id", editCandidate.id);
+      if (error) throw error;
+
+      const updater = (candidateList: CandidateData[]) =>
+        candidateList.map((candidate) =>
+          candidate.id === editCandidate.id
+            ? {
+                ...candidate,
+                ...updates,
+                ai_score: updates.ai_score ?? candidate.ai_score,
+                interview_status: updates.interview_status,
+                Analysis: updates.notes ?? candidate.Analysis,
+              }
+            : candidate
+        );
+
+      setCandidates(updater);
+      setFilteredCandidates(updater);
+
+      toast({
+        title: "Candidate updated",
+        description: "Details saved successfully.",
+      });
+
+      setEditCandidate(null);
+    } catch (error: any) {
+      console.error("Edit candidate error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Unable to update candidate",
+        variant: "destructive",
+      });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteCandidateConfirm = async () => {
+    if (!deleteCandidate) return;
+
+    try {
+      setActionLoadingId(deleteCandidate.id);
+      const tableName = getTableNameForCandidate(deleteCandidate);
+      const { error } = await supabase.from(tableName as any).delete().eq("id", deleteCandidate.id);
+      if (error) throw error;
+
+      setCandidates((prev) => prev.filter((candidate) => candidate.id !== deleteCandidate.id));
+      setFilteredCandidates((prev) => prev.filter((candidate) => candidate.id !== deleteCandidate.id));
+
+      toast({
+        title: "Candidate removed",
+        description: `${deleteCandidate.name} has been deleted`,
+      });
+      setDeleteCandidate(null);
+    } catch (error: any) {
+      console.error("Delete candidate error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Unable to delete candidate",
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const activeFiltersCount = [
@@ -529,6 +768,77 @@ const AdvancedSearch = () => {
                             {candidate.email}
                           </p>
                         </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-64" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuLabel>Manage Candidate</DropdownMenuLabel>
+                            {candidate.cv_file_url ? (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCvViewerCandidate(candidate);
+                                }}
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                View CV
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem disabled>
+                                <Eye className="mr-2 h-4 w-4" />
+                                No CV Uploaded
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveCandidate(candidate, "qualified");
+                              }}
+                              disabled={actionLoadingId === candidate.id}
+                            >
+                              <MoveRight className="mr-2 h-4 w-4" />
+                              Move to Initial Interview Qualified
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveCandidate(candidate, "shortlisted");
+                              }}
+                              disabled={actionLoadingId === candidate.id}
+                            >
+                              <MoveRight className="mr-2 h-4 w-4 rotate-180" />
+                              Move to Shortlisted
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditCandidate(candidate);
+                              }}
+                            >
+                              <PenSquare className="mr-2 h-4 w-4" />
+                              Edit Candidate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteCandidate(candidate);
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Candidate
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
                       {/* Source & Score */}
@@ -722,24 +1032,151 @@ const AdvancedSearch = () => {
                   </p>
                 </div>
 
-                {/* CV Download */}
-                {selectedCandidate.cv_file_url && (
-                  <div className="pt-4 border-t">
+                {/* CV Actions */}
+                <div className="pt-4 border-t">
+                  {selectedCandidate.cv_file_url ? (
                     <Button
-                      onClick={() => handleDownloadCV(selectedCandidate.cv_file_url!)}
+                      variant="outline"
                       className="w-full gap-2"
+                      onClick={() => setCvViewerCandidate(selectedCandidate)}
                     >
-                      <FileText className="h-4 w-4" />
-                      View / Download CV
-                      <Download className="h-4 w-4 ml-auto" />
+                      <Eye className="h-4 w-4" />
+                      View CV
                     </Button>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center">No CV uploaded for this candidate.</p>
+                  )}
+                </div>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!cvViewerCandidate} onOpenChange={(open) => !open && setCvViewerCandidate(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Candidate CV</DialogTitle>
+            <DialogDescription>
+              {cvViewerCandidate?.name} &middot; {cvViewerCandidate?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {cvViewerCandidate?.cv_file_url ? (
+              <div className="h-[500px] rounded-md border">
+                <iframe
+                  src={cvViewerCandidate.cv_file_url}
+                  title="Candidate CV"
+                  className="w-full h-full rounded-md"
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No CV uploaded for this candidate.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCvViewerCandidate(null)}>
+              Close
+            </Button>
+            {cvViewerCandidate?.cv_file_url && (
+              <Button onClick={() => handleDownloadCV(cvViewerCandidate.cv_file_url!)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download CV
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editCandidate} onOpenChange={(open) => !open && setEditCandidate(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Candidate</DialogTitle>
+            <DialogDescription>Update the candidate information and save changes.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editForm.name}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Phone</Label>
+              <Input
+                id="edit-phone"
+                value={editForm.phone}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Interview Status</Label>
+              <Input
+                id="edit-status"
+                value={editForm.interview_status}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, interview_status: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-score">AI Score</Label>
+              <Input
+                id="edit-score"
+                value={editForm.ai_score}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, ai_score: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                rows={4}
+                value={editForm.notes}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditCandidate(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditSubmit} disabled={editLoading}>
+              {editLoading ? "Saving..." : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteCandidate} onOpenChange={(open) => !open && setDeleteCandidate(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete candidate</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently remove{" "}
+              <span className="font-semibold">{deleteCandidate?.name}</span> from your candidates list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteCandidate(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCandidateConfirm}
+              disabled={actionLoadingId === deleteCandidate?.id}
+            >
+              {actionLoadingId === deleteCandidate?.id ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

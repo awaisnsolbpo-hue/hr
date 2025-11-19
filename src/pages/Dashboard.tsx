@@ -31,6 +31,7 @@ import {
     Settings,
     Building2,
     Search,
+    Bell,
 } from "lucide-react";
 import {
     Dialog,
@@ -96,6 +97,10 @@ const Dashboard = () => {
         const saved = localStorage.getItem('darkMode');
         return saved ? JSON.parse(saved) : false;
     });
+    
+    // 🆕 NEW: State for tracking unviewed activities
+    const [hasUnviewedActivities, setHasUnviewedActivities] = useState(false);
+    const [lastViewedTimestamp, setLastViewedTimestamp] = useState<string | null>(null);
 
     useEffect(() => {
         localStorage.setItem('darkMode', JSON.stringify(darkMode));
@@ -105,6 +110,37 @@ const Dashboard = () => {
             document.documentElement.classList.remove('dark');
         }
     }, [darkMode]);
+
+    // 🆕 NEW: Load last viewed timestamp from localStorage
+    useEffect(() => {
+        const stored = localStorage.getItem('lastViewedActivityTimestamp');
+        setLastViewedTimestamp(stored);
+    }, []);
+
+    // 🆕 NEW: Check for unviewed activities
+    useEffect(() => {
+        if (!lastViewedTimestamp || recentActivities.length === 0) {
+            setHasUnviewedActivities(false);
+            return;
+        }
+
+        const lastViewed = new Date(lastViewedTimestamp);
+        const hasNew = recentActivities.some(activity => {
+            const activityDate = new Date(activity.timestamp);
+            return activityDate > lastViewed;
+        });
+
+        setHasUnviewedActivities(hasNew);
+    }, [recentActivities, lastViewedTimestamp]);
+
+    // 🆕 NEW: Mark activities as viewed when user clicks the activity button
+    const handleActivityClick = () => {
+        const now = new Date().toISOString();
+        localStorage.setItem('lastViewedActivityTimestamp', now);
+        setLastViewedTimestamp(now);
+        setHasUnviewedActivities(false);
+        navigate("/activity-logs");
+    };
 
     const deduplicateCandidatesByEmail = (candidates: any[]): any[] => {
         const candidateMap = new Map<string, any>();
@@ -586,6 +622,33 @@ const Dashboard = () => {
                         </Link>
 
                         <div className="flex items-center gap-3">
+                            {/* 🆕 ENHANCED: Activity Logs Button with Blinking Notification */}
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleActivityClick}
+                                className={`gap-2 transition-colors relative ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                            >
+                                <div className="relative">
+                                    <Clock className="h-4 w-4" />
+                                    {hasUnviewedActivities && (
+                                        <>
+                                            {/* Blinking Dot */}
+                                            <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                                <span className="hidden md:inline">Activity</span>
+                                {hasUnviewedActivities && (
+                                    <Badge className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0 h-4 animate-pulse">
+                                        New
+                                    </Badge>
+                                )}
+                            </Button>
+
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -640,6 +703,17 @@ const Dashboard = () => {
                                     <DropdownMenuItem onClick={() => navigate("/profile")} className="cursor-pointer">
                                         <User className="mr-2 h-4 w-4" />
                                         <span>Profile</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={handleActivityClick} className="cursor-pointer">
+                                        <div className="flex items-center w-full">
+                                            <Clock className="mr-2 h-4 w-4" />
+                                            <span>Activity Logs</span>
+                                            {hasUnviewedActivities && (
+                                                <Badge className="ml-auto bg-red-500 text-white text-xs px-1.5 py-0 h-4">
+                                                    •
+                                                </Badge>
+                                            )}
+                                        </div>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => navigate("/settings")} className="cursor-pointer">
                                         <Settings className="mr-2 h-4 w-4" />
