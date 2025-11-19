@@ -371,7 +371,7 @@ const TotalCandidatesPage = () => {
                   <Users className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold">Total Candidates</h1>
+                  <h1 className="text-xl font-bold">AI Hiring - Total Candidates</h1>
                   <p className="text-sm text-muted-foreground">
                     {candidates.length} unique {candidates.length === 1 ? "candidate" : "candidates"}
                   </p>
@@ -390,7 +390,7 @@ const TotalCandidatesPage = () => {
         <Card className="shadow-elegant">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>All Candidates</span>
+              <span>AI Hiring - All Candidates</span>
               <Badge variant="secondary">{candidates.length} Total</Badge>
             </CardTitle>
           </CardHeader>
