@@ -28,7 +28,7 @@ import IntegrationsSettings from "./pages/IntegrationsSettings";
 import ScheduledMeetings from "./pages/ScheduledMeetings";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
-import ActivityLogs from "./pages/ActivityLogs";
+import ActivityLogs from "./pages/Activitylogs"
 import CandidateSearch from "./pages/Candidatesearch";
 import AdvancedSearch from "./pages/AdvancedSearch";
 import InterviewLandingPage from "./pages/InterviewLandingPage";
