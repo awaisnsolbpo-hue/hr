@@ -30,7 +30,6 @@ import {
   CalendarPlus,
   MoreVertical,
   Eye,
-  MoveRight,
   PenSquare,
   Trash2,
 } from "lucide-react";
@@ -702,21 +701,6 @@ const ShortlistedCandidatesPage = () => {
                                     No CV Uploaded
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleMoveCandidate(candidate, "qualified")}
-                                  disabled={actionLoadingId === candidate.id}
-                                >
-                                  <MoveRight className="mr-2 h-4 w-4" />
-                                  Move to Initial Interview Qualified
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleMoveCandidate(candidate, "shortlisted")}
-                                  disabled={actionLoadingId === candidate.id}
-                                >
-                                  <MoveRight className="mr-2 h-4 w-4 rotate-180" />
-                                  Move to Shortlisted
-                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => setEditCandidate(candidate)}>
                                   <PenSquare className="mr-2 h-4 w-4" />

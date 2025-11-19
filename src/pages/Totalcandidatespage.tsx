@@ -24,7 +24,6 @@ import {
   Star,
   MoreVertical,
   Eye,
-  MoveRight,
   PenSquare,
   Trash2,
   Download,
@@ -219,7 +218,7 @@ const TotalCandidatesPage = () => {
         interview_status: candidate.interview_status || null,
         interview_date: candidate.interview_date || null,
         interview_result: candidate.interview_result || null,
-        status: candidate.source,
+        // status: candidate.source,
         notes: candidate.Analysis || null,
         updated_at: new Date().toISOString(),
       };
@@ -514,21 +513,6 @@ const TotalCandidatesPage = () => {
                                   No CV Uploaded
                                 </DropdownMenuItem>
                               )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleMoveCandidate(candidate, "qualified")}
-                                disabled={actionLoadingId === candidate.id}
-                              >
-                                <MoveRight className="mr-2 h-4 w-4" />
-                                Move to Initial Interview Qualified
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleMoveCandidate(candidate, "shortlisted")}
-                                disabled={actionLoadingId === candidate.id}
-                              >
-                                <MoveRight className="mr-2 h-4 w-4 rotate-180" />
-                                Move to Shortlisted
-                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => setEditCandidate(candidate)}>
                                 <PenSquare className="mr-2 h-4 w-4" />
