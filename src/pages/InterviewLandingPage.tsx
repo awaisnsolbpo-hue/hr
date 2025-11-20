@@ -7,7 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Video, Sparkles, Shield } from "lucide-react";
+import { Video, Sparkles, Shield, Briefcase } from "lucide-react";
+
+interface JobInterview {
+  id: string;
+  job_id: string;
+  job_title: string | null;
+  interview_status: string;
+}
 
 const InterviewLandingPage = () => {
   const [name, setName] = useState("");
@@ -16,6 +23,8 @@ const InterviewLandingPage = () => {
   const [showNotScheduled, setShowNotScheduled] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [showOtherStatus, setShowOtherStatus] = useState(false);
+  const [showJobSelection, setShowJobSelection] = useState(false);
+  const [availableJobs, setAvailableJobs] = useState<JobInterview[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -35,12 +44,12 @@ const InterviewLandingPage = () => {
     setLoading(true);
 
     try {
+      // Fetch all interview records for this email with job information
       const { data, error } = await supabase
         .from("Qualified_For_Final_Interview" as any)
-        .select("email, interview_status, name")
-        .eq("email", email.trim())
-        .maybeSingle();
-   console.log(data);
+        .select("id, email, interview_status, name, job_id, jobs(title)")
+        .eq("email", email.trim());
+      
       if (error) {
         console.error("Supabase query error:", error);
         toast({
@@ -52,29 +61,66 @@ const InterviewLandingPage = () => {
       }
 
       // Check if email exists in database
-      if (!data) {
+      if (!data || data.length === 0) {
         setShowNotScheduled(true);
         return;
       }
 
-      // Check interview status - cast to any to handle type mismatch
-      const candidateData = data as any;
-      const interviewStatus = candidateData?.interview_status?.trim() || "";
+      // Filter to only scheduled interviews
+      const scheduledInterviews = data.filter((record: any) => {
+        const status = record?.interview_status?.trim() || "";
+        return status === "Scheduled";
+      });
 
-      if (interviewStatus === "Scheduled") {
-        // Status is Scheduled - redirect to interview room
-        navigate(`/interview-room?email=${encodeURIComponent(email.trim())}`);
-      } else if (interviewStatus === "Completed") {
-        // Status is Completed - show completed dialog
-        setShowCompleted(true);
-      } else if (interviewStatus) {
-        // Other status (e.g., "In Progress", "Cancelled", etc.)
-        setStatusMessage(interviewStatus);
-        setShowOtherStatus(true);
-      } else {
-        // No status set - treat as not scheduled
-        setShowNotScheduled(true);
+      // Check if there are multiple scheduled interviews
+      if (scheduledInterviews.length > 1) {
+        // Show job selection popup
+        const jobsList: JobInterview[] = scheduledInterviews.map((record: any) => ({
+          id: record.id,
+          job_id: record.job_id,
+          job_title: record.jobs?.title || "Unknown Job",
+          interview_status: record.interview_status,
+        }));
+        setAvailableJobs(jobsList);
+        setShowJobSelection(true);
+        setLoading(false);
+        return;
       }
+
+      // If only one scheduled interview, proceed normally
+      if (scheduledInterviews.length === 1) {
+        const candidateData = scheduledInterviews[0] as any;
+        navigate(`/interview-room?email=${encodeURIComponent(email.trim())}&job_id=${encodeURIComponent(candidateData.job_id)}`);
+        setLoading(false);
+        return;
+      }
+
+      // Check other statuses from all records
+      const completedInterviews = data.filter((record: any) => {
+        const status = record?.interview_status?.trim() || "";
+        return status === "Completed";
+      });
+
+      if (completedInterviews.length > 0) {
+        setShowCompleted(true);
+        return;
+      }
+
+      // Check for other statuses
+      const otherStatusRecords = data.filter((record: any) => {
+        const status = record?.interview_status?.trim() || "";
+        return status && status !== "Scheduled" && status !== "Completed";
+      });
+
+      if (otherStatusRecords.length > 0) {
+        const firstRecord = otherStatusRecords[0] as any;
+        setStatusMessage(firstRecord.interview_status || "");
+        setShowOtherStatus(true);
+        return;
+      }
+
+      // No scheduled interviews found
+      setShowNotScheduled(true);
     } catch (err) {
       console.error("Unexpected error:", err);
       toast({
@@ -85,6 +131,11 @@ const InterviewLandingPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleJobSelection = (job: JobInterview) => {
+    navigate(`/interview-room?email=${encodeURIComponent(email.trim())}&job_id=${encodeURIComponent(job.job_id)}`);
+    setShowJobSelection(false);
   };
 
   return (
@@ -249,6 +300,43 @@ const InterviewLandingPage = () => {
           <AlertDialogFooter>
             <Button onClick={() => setShowOtherStatus(false)}>
               Close
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Job Selection Dialog */}
+      <AlertDialog open={showJobSelection} onOpenChange={setShowJobSelection}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Select Interview</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have multiple scheduled interviews. Please select which interview you would like to access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-4">
+            {availableJobs.map((job) => (
+              <Button
+                key={job.id}
+                variant="outline"
+                className="w-full justify-start h-auto py-4 px-4 hover:bg-accent"
+                onClick={() => handleJobSelection(job)}
+              >
+                <div className="flex items-center gap-3 w-full">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Briefcase className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-semibold text-foreground">{job.job_title}</div>
+                    <div className="text-sm text-muted-foreground">Click to access interview</div>
+                  </div>
+                </div>
+              </Button>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={() => setShowJobSelection(false)}>
+              Cancel
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -14,6 +14,7 @@ const InterviewRoom = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const email = searchParams.get("email");
+  const jobId = searchParams.get("job_id");
 
   // Get Supabase credentials for sync updates on page close
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -224,12 +225,18 @@ const InterviewRoom = () => {
 
     const fetchCandidate = async () => {
       try {
-        // Fetch ALL rows with matching email, ordered by creation/insertion order
-        const { data, error } = await supabase
+        // Build query - if job_id is provided, filter by both email and job_id
+        let query = supabase
           .from("Qualified_For_Final_Interview" as any)
-          .select('id, name, email, "Question Ask by Client", "AI Generated Question", interview_status, created_at')
-          .eq("email", email)
-          .order('created_at', { ascending: true }); // Order by creation time to get sequence
+          .select('id, name, email, "Question Ask by Client", "AI Generated Question", interview_status, created_at, job_id')
+          .eq("email", email);
+
+        // If job_id is provided, filter by specific job
+        if (jobId) {
+          query = query.eq("job_id", jobId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
 
         if (error) {
           console.error("Error fetching candidate:", error);
@@ -245,7 +252,9 @@ const InterviewRoom = () => {
         if (!data || data.length === 0) {
           toast({
             title: "Not Found",
-            description: "No interview scheduled for this email.",
+            description: jobId 
+              ? "No interview scheduled for this email and job." 
+              : "No interview scheduled for this email.",
             variant: "destructive",
           });
           navigate("/interview-landing");
@@ -253,11 +262,12 @@ const InterviewRoom = () => {
         }
 
         // Log all matching records for debugging
-        console.log(`Found ${data.length} interview record(s) for email: ${email}`);
+        console.log(`Found ${data.length} interview record(s) for email: ${email}${jobId ? ` and job_id: ${jobId}` : ''}`);
         data.forEach((record: any, index: number) => {
           console.log(`Record ${index + 1}:`, {
             id: record.id,
             status: record.interview_status,
+            job_id: record.job_id,
             created_at: record.created_at
           });
         });
@@ -290,7 +300,8 @@ const InterviewRoom = () => {
         console.log("Selected Interview Record:", {
           id: candidateData.id,
           status: candidateData.interview_status,
-          name: candidateData.name
+          name: candidateData.name,
+          job_id: candidateData.job_id
         });
 
         // Log extracted questions for debugging
@@ -308,7 +319,7 @@ const InterviewRoom = () => {
     };
 
     fetchCandidate();
-  }, [email, navigate, toast]);
+  }, [email, jobId, navigate, toast]);
 
   // Recording duration timer
   useEffect(() => {
