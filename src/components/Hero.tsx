@@ -1,14 +1,15 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Play } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
+import BookDemoDialog from "@/components/BookDemoDialog";
 
 const Hero = () => {
+  const [showDemoDialog, setShowDemoDialog] = useState(false);
+
   const handleDemoClick = () => {
-    const element = document.getElementById("demo");
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    setShowDemoDialog(true);
   };
 
   return (
@@ -32,26 +33,22 @@ const Hero = () => {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
             </span>
             <span className="text-xs sm:text-sm font-medium">
-              AI-Powered Recruitment Platform
+              AI That Identifies Qualified Talent in Minutes
             </span>
           </div>
 
           {/* Main Headline - Mobile Optimized */}
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold leading-tight px-2 sm:px-0">
-            From{" "}
-            <span className="text-gradient animate-glow-pulse">CV Chaos</span>
-            {" "}to
-            <br className="hidden xs:block" />
-            {" "}Qualified Shortlists
+            Stop Sorting{" "}
+            <span className="text-gradient animate-glow-pulse">Resumes</span>
             <br />
-            in{" "}
-            <span className="text-gradient">Minutes</span>
+            Start Finding the{" "}
+            <span className="text-gradient">Right People</span>
           </h1>
 
           {/* Subheading - Mobile Optimized */}
           <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground max-w-2xl mx-auto px-2 sm:px-4">
-            Auto-screen, auto-interview, and shortlist top talent using AI.
-            Transform your hiring process with intelligent candidate screening.
+            Automatically screen applicants, assess job fit, and deliver ranked shortlists. Accelerate hiring by removing repetitive steps and focusing on the best candidates.
           </p>
 
           {/* CTA Buttons - Mobile Optimized */}
@@ -88,6 +85,15 @@ const Hero = () => {
 
       {/* Decorative Elements */}
       <div className="absolute bottom-0 left-0 right-0 h-24 sm:h-32 bg-gradient-to-t from-background to-transparent z-10" />
+
+      {/* Book Demo Dialog */}
+      <BookDemoDialog 
+        open={showDemoDialog} 
+        onOpenChange={setShowDemoDialog}
+        onSuccess={() => {
+          // Optional: Handle success (e.g., show thank you message)
+        }}
+      />
     </section>
   );
 };

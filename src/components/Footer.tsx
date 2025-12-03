@@ -15,7 +15,7 @@ const Footer = () => {
               <span className="text-xl font-bold text-gradient">AI Hiring</span>
             </Link>
             <p className="text-sm text-muted-foreground">
-              Transform your hiring process with intelligent AI-powered candidate screening.
+              Intelligent automation for recruitment. Find the best talent faster through AI-powered screening and interviewing.
             </p>
           </div>
 

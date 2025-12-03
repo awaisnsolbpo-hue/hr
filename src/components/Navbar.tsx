@@ -9,10 +9,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import BookDemoDialog from "@/components/BookDemoDialog";
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [showDemoDialog, setShowDemoDialog] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -103,7 +105,7 @@ const Navbar = () => {
             <Button 
               variant="outline" 
               size="default"
-              onClick={() => handleNavigation("/#demo")}
+              onClick={() => setShowDemoDialog(true)}
             >
               Book a Demo
             </Button>
@@ -171,7 +173,10 @@ const Navbar = () => {
                   <Button
                     variant="outline"
                     size="lg"
-                    onClick={() => handleNavigation("/#demo")}
+                    onClick={() => {
+                      setIsOpen(false);
+                      setShowDemoDialog(true);
+                    }}
                     className="w-full min-h-touch text-base"
                   >
                     Book a Demo
@@ -182,6 +187,15 @@ const Navbar = () => {
           </Sheet>
         </div>
       </div>
+
+      {/* Book Demo Dialog */}
+      <BookDemoDialog 
+        open={showDemoDialog} 
+        onOpenChange={setShowDemoDialog}
+        onSuccess={() => {
+          // Optional: Handle success
+        }}
+      />
     </nav>
   );
 };

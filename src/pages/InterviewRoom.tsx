@@ -2,12 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { createVapiClient, type VapiSessionContext } from "@/lib/vapiClient";
 import { type CandidateRecord } from "@/lib/interviewTypes";
 import { useToast } from "@/hooks/use-toast";
 import InterviewBadge from "@/components/InterviewBadge";
-import { Video, Mic, VideoOff, MicOff, User, Sparkles, Volume2, LogOut } from "lucide-react";
+import { Video, Mic, VideoOff, MicOff, User, Sparkles, Volume2, LogOut, Loader2 } from "lucide-react";
 
 const InterviewRoom = () => {
   const [searchParams] = useSearchParams();
@@ -46,6 +47,8 @@ const InterviewRoom = () => {
   const [showThankYou, setShowThankYou] = useState(false);
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [wakeLock, setWakeLock] = useState<any>(null);
+  const [showConnectingModal, setShowConnectingModal] = useState(false);
+  const [aiHasStartedSpeaking, setAiHasStartedSpeaking] = useState(false);
 
   // Ref for transcript container to enable auto-scroll
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -53,12 +56,17 @@ const InterviewRoom = () => {
   const isEndingInterview = useRef(false);
   const audioMonitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Auto-scroll transcript to bottom when new entries are added
+  // Auto-scroll transcript to bottom when new entries are added or partial transcript updates
   useEffect(() => {
     if (transcriptEndRef.current && transcriptContainerRef.current) {
-      transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Use requestAnimationFrame for smoother scrolling
+      requestAnimationFrame(() => {
+        if (transcriptEndRef.current) {
+          transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      });
     }
-  }, [transcript]);
+  }, [transcript, partialTranscript]);
 
   // Handle page refresh/close - mark interview as completed if started
   useEffect(() => {
@@ -654,6 +662,8 @@ const InterviewRoom = () => {
 
     // Set connecting state
     setConnecting(true);
+    setShowConnectingModal(true);
+    setAiHasStartedSpeaking(false);
 
     // Mark that interview has been started (for refresh detection)
     setInterviewStarted(true);
@@ -677,6 +687,7 @@ const InterviewRoom = () => {
     const stream = await requestMediaAccess();
     if (!stream) {
       setConnecting(false);
+      setShowConnectingModal(false);
       setInterviewStarted(false);
       return;
     }
@@ -692,6 +703,7 @@ const InterviewRoom = () => {
         setMicOn(false);
       }
       setConnecting(false);
+      setShowConnectingModal(false);
       setInterviewStarted(false);
       return;
     }
@@ -708,6 +720,7 @@ const InterviewRoom = () => {
         variant: "destructive",
       });
       setConnecting(false);
+      setShowConnectingModal(false);
       setInterviewStarted(false);
       return;
     }
@@ -741,6 +754,7 @@ const InterviewRoom = () => {
           }
 
           setConnecting(false);
+          setShowConnectingModal(false);
           toast({
             title: "Interview Error",
             description: error.message || error.errorMsg || "An error occurred during the interview. Please try again.",
@@ -760,11 +774,17 @@ const InterviewRoom = () => {
           console.log("Vapi call started");
           setConnecting(false);
           setInterviewActive(true);
+          // Keep modal open until AI starts speaking
         });
 
         // Listen to Vapi events
         vapi.on("speech-start", () => {
           setIsSpeaking(true);
+          // Hide connecting modal when AI starts speaking
+          if (!aiHasStartedSpeaking) {
+            setAiHasStartedSpeaking(true);
+            setShowConnectingModal(false);
+          }
           // Finalize any pending human transcript when AI starts speaking
           if (partialTranscript && partialTranscript.speaker === 'HUMAN') {
             setTranscript(prev => [...prev, {
@@ -773,6 +793,12 @@ const InterviewRoom = () => {
               speaker: 'HUMAN'
             }]);
             setPartialTranscript(null);
+            // Auto-scroll after adding finalized transcript
+            setTimeout(() => {
+              if (transcriptEndRef.current) {
+                transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }, 100);
           }
         });
 
@@ -786,6 +812,12 @@ const InterviewRoom = () => {
               speaker: 'AI'
             }]);
             setPartialTranscript(null);
+            // Auto-scroll after adding finalized transcript
+            setTimeout(() => {
+              if (transcriptEndRef.current) {
+                transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }, 100);
           }
         });
 
@@ -800,13 +832,19 @@ const InterviewRoom = () => {
 
             // Determine speaker from message role: "assistant" = AI, "user" = HUMAN
             const speaker: 'AI' | 'HUMAN' = message.role === "assistant" ? 'AI' : 'HUMAN';
+            
+            // Hide connecting modal when first AI message appears
+            if (speaker === 'AI' && !aiHasStartedSpeaking) {
+              setAiHasStartedSpeaking(true);
+              setShowConnectingModal(false);
+            }
 
             // Clear any existing timeout
             if (transcriptTimeout) {
               clearTimeout(transcriptTimeout);
             }
 
-            // Update or create partial transcript
+            // Update or create partial transcript - accumulate text properly
             setPartialTranscript(prev => {
               // If speaker changed, finalize previous and start new
               if (prev && prev.speaker !== speaker) {
@@ -815,19 +853,26 @@ const InterviewRoom = () => {
                   timestamp: prev.startTime,
                   speaker: prev.speaker
                 }]);
+                // Auto-scroll after adding finalized transcript
+                setTimeout(() => {
+                  if (transcriptEndRef.current) {
+                    transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }
+                }, 100);
                 return { text: message.transcript, speaker, startTime: currentTime };
               }
 
-              // Same speaker - accumulate text
-              if (prev) {
-                return { ...prev, text: message.transcript };
+              // Same speaker - accumulate text (replace with latest full transcript)
+              // Vapi sends incremental updates, so we use the latest full transcript
+              if (prev && prev.speaker === speaker) {
+                return { ...prev, text: message.transcript, startTime: prev.startTime };
               }
 
               // New transcript
               return { text: message.transcript, speaker, startTime: currentTime };
             });
 
-            // Set timeout to finalize after 1 second of silence
+            // Set timeout to finalize after 2 seconds of silence (increased for better accumulation)
             const timeout = setTimeout(() => {
               setPartialTranscript(prev => {
                 if (prev) {
@@ -836,11 +881,17 @@ const InterviewRoom = () => {
                     timestamp: prev.startTime,
                     speaker: prev.speaker
                   }]);
+                  // Auto-scroll after adding finalized transcript
+                  setTimeout(() => {
+                    if (transcriptEndRef.current) {
+                      transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                  }, 100);
                   return null;
                 }
                 return null;
               });
-            }, 1000); // 1 second silence threshold
+            }, 2000); // 2 second silence threshold for better accumulation
 
             setTranscriptTimeout(timeout);
           }
@@ -863,8 +914,12 @@ const InterviewRoom = () => {
         name: "AI Interview Assistant",
         transcriber: {
           provider: "deepgram",
-          model: "nova-2",
+          model: "nova-2", // Use latest Deepgram model for better accuracy
           language: "en-US",
+          // Enhanced settings for better speech recognition
+          keywords: [], // Add domain-specific keywords if needed for better recognition
+          smartFormat: true, // Enable smart formatting (punctuation, capitalization)
+          endpointing: 500, // Endpointing timeout in ms (500ms silence to finalize - better for natural pauses)
         },
         model: {
           provider: "openai",
@@ -913,8 +968,12 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
         },
         voice: {
           provider: "playht",
-          voiceId: "jennifer"
-        }
+          voiceId: "jennifer",
+          // Enhanced voice settings for better quality and clarity
+          speed: 1.0, // Normal speaking speed
+          stability: 0.5, // Voice stability (0-1) - balanced for natural speech
+          similarityBoost: 0.75, // Voice similarity boost (0-1) - higher for clearer voice
+        },
       });
 
       // The interview will be set to active when call-start event fires
@@ -929,6 +988,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
     } catch (error: any) {
       console.error("Failed to start interview:", error);
       setConnecting(false);
+      setShowConnectingModal(false);
       setVapiInitialized(false);
       setVapiReady(false);
       setInterviewStarted(false);
@@ -1242,7 +1302,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-2xl">AI Interview Room</CardTitle>
+                <CardTitle className="text-2xl">Interview Room</CardTitle>
                 <CardDescription className="mt-2">
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4" />
@@ -1295,7 +1355,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
           {/* AI Avatar */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">AI Interviewer</CardTitle>
+              <CardTitle className="text-lg">Interviewer</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/20 rounded-lg overflow-hidden flex items-center justify-center">
@@ -1426,31 +1486,122 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
         </Card>
 
         {/* Transcript */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Interview Transcript</CardTitle>
+        <Card className="shadow-lg">
+          <CardHeader className="border-b bg-gradient-to-r from-primary/5 to-accent/5">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Live Interview Transcript
+              </CardTitle>
+              {transcript.length > 0 && (
+                <span className="text-xs text-muted-foreground font-medium">
+                  {transcript.length} {transcript.length === 1 ? 'message' : 'messages'}
+                </span>
+              )}
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <div
               ref={transcriptContainerRef}
-              className="space-y-3 max-h-80 overflow-y-auto p-4 bg-muted/30 rounded-lg border"
+              className="space-y-4 max-h-96 overflow-y-auto p-6 bg-gradient-to-b from-background to-muted/20"
               style={{ scrollBehavior: 'smooth' }}
             >
-              {transcript.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-8">
-                  Transcript will appear here during the interview...
+              {transcript.length === 0 && !partialTranscript ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-primary/10 p-4 mb-4">
+                    <Sparkles className="h-8 w-8 text-primary/60" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">
+                    Your interview transcript will appear here
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    All conversation will be displayed here in real-time once the interview begins.
+                  </p>
                 </div>
               ) : (
                 <>
                   {transcript.map((entry, idx) => (
-                    <div key={idx} className="text-sm flex gap-2">
-                      <span className="text-xs text-muted-foreground font-mono shrink-0">[{entry.timestamp}]</span>
-                      <span className={`text-xs font-semibold shrink-0 ${entry.speaker === 'AI' ? 'text-primary' : 'text-accent'}`}>
-                        [{entry.speaker}]:
-                      </span>
-                      <span className="flex-1">{entry.text}</span>
+                    <div 
+                      key={idx} 
+                      className={`group flex gap-4 p-4 rounded-lg transition-all duration-200 ${
+                        entry.speaker === 'AI' 
+                          ? 'bg-primary/5 border-l-4 border-primary hover:bg-primary/10' 
+                          : 'bg-accent/5 border-l-4 border-accent hover:bg-accent/10'
+                      }`}
+                    >
+                      <div className="flex-shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          entry.speaker === 'AI' 
+                            ? 'bg-primary/20 text-primary' 
+                            : 'bg-accent/20 text-accent'
+                        }`}>
+                          {entry.speaker === 'AI' ? (
+                            <Sparkles className="h-4 w-4" />
+                          ) : (
+                            <User className="h-4 w-4" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-sm font-semibold ${
+                            entry.speaker === 'AI' ? 'text-primary' : 'text-accent'
+                          }`}>
+                            {entry.speaker === 'AI' ? 'Interviewer' : candidate.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {entry.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                          {entry.text}
+                        </p>
+                      </div>
                     </div>
                   ))}
+                  {/* Show partial transcript as it's being spoken */}
+                  {partialTranscript && (
+                    <div 
+                      className={`group flex gap-4 p-4 rounded-lg transition-all duration-200 animate-pulse ${
+                        partialTranscript.speaker === 'AI' 
+                          ? 'bg-primary/5 border-l-4 border-primary border-dashed' 
+                          : 'bg-accent/5 border-l-4 border-accent border-dashed'
+                      }`}
+                    >
+                      <div className="flex-shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          partialTranscript.speaker === 'AI' 
+                            ? 'bg-primary/20 text-primary' 
+                            : 'bg-accent/20 text-accent'
+                        }`}>
+                          {partialTranscript.speaker === 'AI' ? (
+                            <Sparkles className="h-4 w-4" />
+                          ) : (
+                            <User className="h-4 w-4" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-sm font-semibold ${
+                            partialTranscript.speaker === 'AI' ? 'text-primary' : 'text-accent'
+                          }`}>
+                            {partialTranscript.speaker === 'AI' ? 'Interviewer' : candidate.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {partialTranscript.startTime}
+                          </span>
+                          <span className="text-xs text-muted-foreground italic">
+                            (speaking...)
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                          {partialTranscript.text}
+                          <span className="inline-block w-2 h-4 bg-current animate-pulse ml-1" />
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <div ref={transcriptEndRef} />
                 </>
               )}
@@ -1458,6 +1609,32 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
           </CardContent>
         </Card>
       </div>
+
+      {/* Connecting/Loading Modal */}
+      <Dialog open={showConnectingModal} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md [&>button]:hidden">
+          <DialogHeader>
+            <DialogTitle className="text-center">Connecting to Interview</DialogTitle>
+            <DialogDescription className="text-center">
+              Please wait while we set up your interview session...
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-8 space-y-6">
+            <div className="relative">
+              <Loader2 className="h-16 w-16 text-primary animate-spin" />
+              <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping" />
+            </div>
+            <div className="space-y-2 text-center">
+              <p className="text-sm font-medium">Initializing interview room...</p>
+              <p className="text-xs text-muted-foreground">
+                {connecting && !isRecording && "Requesting permissions..."}
+                {isRecording && !aiHasStartedSpeaking && "Recording started. Waiting for AI to begin..."}
+                {aiHasStartedSpeaking && "AI is connecting..."}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -147,7 +147,7 @@ const InterviewLandingPage = () => {
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
               <Video className="w-6 h-6 text-primary-foreground" />
             </div>
-            <h1 className="text-xl font-bold text-foreground">AI Interview Portal</h1>
+            <h1 className="text-xl font-bold text-foreground">Interview Portal</h1>
           </div>
         </div>
       </header>
@@ -161,17 +161,17 @@ const InterviewLandingPage = () => {
               <div className="inline-block">
                 <div className="bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
-                  AI-Powered Interviews
+                  Professional Interview Experience
                 </div>
               </div>
               <h2 className="text-5xl font-bold text-foreground leading-tight">
                 Welcome to Your
                 <span className="block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                  AI Interview
+                  Interview Experience
                 </span>
               </h2>
-              <p className="text-lg text-muted-foreground">
-                Experience a professional, AI-driven interview process. Our advanced system conducts personalized interviews tailored to your background and the position.
+              <p className="text-lg text-muted-foreground leading-relaxed">
+                Join a professional, personalized interview designed to showcase your skills. Our intelligent system adapts to your background and the role, ensuring a fair and comprehensive evaluation.
               </p>
               
               {/* Features */}
@@ -181,8 +181,8 @@ const InterviewLandingPage = () => {
                     <Video className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Real-time Interaction</h3>
-                    <p className="text-sm text-muted-foreground">Live voice conversation with our AI interviewer</p>
+                    <h3 className="font-semibold text-foreground">Real-time Video Interview</h3>
+                    <p className="text-sm text-muted-foreground">Engage in a natural video conversation with our intelligent interviewer in a professional environment.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -190,8 +190,8 @@ const InterviewLandingPage = () => {
                     <Sparkles className="w-5 h-5 text-accent" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Personalized Questions</h3>
-                    <p className="text-sm text-muted-foreground">Custom questions based on your profile and role</p>
+                    <h3 className="font-semibold text-foreground">Tailored Questions</h3>
+                    <p className="text-sm text-muted-foreground">Answer questions crafted based on your resume and position requirements to highlight your experience.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -199,8 +199,8 @@ const InterviewLandingPage = () => {
                     <Shield className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Secure & Private</h3>
-                    <p className="text-sm text-muted-foreground">Your interview data is encrypted and secure</p>
+                    <h3 className="font-semibold text-foreground">Secure & Confidential</h3>
+                    <p className="text-sm text-muted-foreground">Enterprise-grade security with encrypted storage ensures your data and recordings are protected.</p>
                   </div>
                 </div>
               </div>
@@ -211,7 +211,7 @@ const InterviewLandingPage = () => {
               <CardHeader>
                 <CardTitle>Access Your Interview</CardTitle>
                 <CardDescription>
-                  Enter your details to join your scheduled AI interview
+                  Enter your details to access your scheduled interview. Ensure you have a quiet environment and stable internet connection.
                 </CardDescription>
               </CardHeader>
               <CardContent>

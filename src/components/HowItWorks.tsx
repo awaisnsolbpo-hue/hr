@@ -3,26 +3,26 @@ import { FileText, Users, Brain, Award } from "lucide-react";
 const steps = [
   {
     number: "01",
-    title: "Import Job",
-    description: "Add your job posting manually or import directly from LinkedIn with one click.",
+    title: "Post Your Job",
+    description: "Create detailed job postings or import from LinkedIn. Share public links to reach candidates and expand your talent pool.",
     icon: FileText,
   },
   {
     number: "02",
-    title: "Collect Resumes",
-    description: "Upload CVs manually, sync with Gmail, or share a public link for candidates.",
+    title: "Collect Applications",
+    description: "Receive applications through multiple channels - direct uploads, email integration, or public links. All resumes are automatically organized.",
     icon: Users,
   },
   {
     number: "03",
-    title: "AI Interviews Candidates",
-    description: "Our AI automatically screens and interviews candidates based on your requirements.",
+    title: "AI Evaluates Candidates",
+    description: "Our system analyzes each resume against your requirements, scoring candidates on skills, experience, and qualifications. Top candidates are automatically identified.",
     icon: Brain,
   },
   {
     number: "04",
-    title: "Review Ranked Shortlist",
-    description: "Get a smart shortlist of top candidates ranked by match score and qualifications.",
+    title: "Review Top Talent",
+    description: "Access a ranked shortlist with detailed analysis, interview transcripts, and performance scores to make informed hiring decisions.",
     icon: Award,
   },
 ];
@@ -37,7 +37,7 @@ const HowItWorks = () => {
             How It <span className="text-gradient">Works</span>
           </h2>
           <p className="text-lg text-muted-foreground">
-            Four simple steps to transform your hiring process with AI
+            A streamlined four-step process that transforms how you find and evaluate talent. From job posting to final selection, we handle the heavy lifting.
           </p>
         </div>
 
