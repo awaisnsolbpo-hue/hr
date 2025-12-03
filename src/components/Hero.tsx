@@ -33,22 +33,22 @@ const Hero = () => {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
             </span>
             <span className="text-xs sm:text-sm font-medium">
-              AI That Identifies Qualified Talent in Minutes
+              Solve Your Hiring Challenges
             </span>
           </div>
 
           {/* Main Headline - Mobile Optimized */}
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold leading-tight px-2 sm:px-0">
-            Stop Sorting{" "}
-            <span className="text-gradient animate-glow-pulse">Resumes</span>
+            Stop Wasting Time on{" "}
+            <span className="text-gradient animate-glow-pulse">Unqualified Candidates</span>
             <br />
-            Start Finding the{" "}
-            <span className="text-gradient">Right People</span>
+            Find the Right Talent{" "}
+            <span className="text-gradient">Faster</span>
           </h1>
 
           {/* Subheading - Mobile Optimized */}
           <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground max-w-2xl mx-auto px-2 sm:px-4">
-            Automatically screen applicants, assess job fit, and deliver ranked shortlists. Accelerate hiring by removing repetitive steps and focusing on the best candidates.
+            Automatically screen resumes, conduct interviews, and rank candidates. Reduce hiring time by 80% while finding better matches.
           </p>
 
           {/* CTA Buttons - Mobile Optimized */}

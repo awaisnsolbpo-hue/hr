@@ -68,6 +68,15 @@ const InterviewRoom = () => {
     }
   }, [transcript, partialTranscript]);
 
+  // Hide loading screen when interview becomes active (End Interview button shows up)
+  useEffect(() => {
+    if (interviewActive && showConnectingModal) {
+      console.log("Interview active - hiding loading screen");
+      setShowConnectingModal(false);
+      setConnecting(false);
+    }
+  }, [interviewActive, showConnectingModal]);
+
   // Handle page refresh/close - mark interview as completed if started
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -145,8 +154,8 @@ const InterviewRoom = () => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         console.log("Page hidden - maintaining audio connection");
-        // Keep audio tracks alive by checking their state
-        if (mediaStream && interviewActive) {
+        // Keep audio tracks alive by checking their state (during interview or loading)
+        if (mediaStream && (interviewActive || connecting)) {
           const audioTrack = mediaStream.getAudioTracks()[0];
           if (audioTrack && audioTrack.readyState === 'live') {
             // Force track to stay active
@@ -155,8 +164,8 @@ const InterviewRoom = () => {
         }
       } else {
         console.log("Page visible - verifying audio connection");
-        // When page becomes visible, verify audio is still working
-        if (mediaStream && interviewActive) {
+        // When page becomes visible, verify audio is still working (during interview or loading)
+        if (mediaStream && (interviewActive || connecting)) {
           const audioTrack = mediaStream.getAudioTracks()[0];
           if (audioTrack && audioTrack.readyState !== 'live') {
             console.error("Audio track not live after visibility change");
@@ -174,7 +183,7 @@ const InterviewRoom = () => {
       window.removeEventListener('unload', handleUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [interviewStarted, candidate, interviewActive, mediaStream, isUploading]);
+  }, [interviewStarted, candidate, interviewActive, connecting, mediaStream, isUploading]);
 
   // Helper function to mark interview as completed
   const markInterviewAsCompleted = async (candidateId: string, isRefresh: boolean = false) => {
@@ -384,7 +393,8 @@ const InterviewRoom = () => {
         audioTrack.onended = async () => {
           console.warn("Audio track ended unexpectedly - attempting recovery");
 
-          if (interviewActive && !isEndingInterview.current) {
+          // Recover audio if interview is active OR if we're still connecting (loading screen)
+          if ((interviewActive || connecting) && !isEndingInterview.current) {
             // Don't show error immediately, try to recover first
             try {
               // Try to get new audio track
@@ -774,7 +784,8 @@ const InterviewRoom = () => {
           console.log("Vapi call started");
           setConnecting(false);
           setInterviewActive(true);
-          // Keep modal open until AI starts speaking
+          // Hide loading screen when interview is active (End Interview button will show)
+          setShowConnectingModal(false);
         });
 
         // Listen to Vapi events
@@ -785,40 +796,14 @@ const InterviewRoom = () => {
             setAiHasStartedSpeaking(true);
             setShowConnectingModal(false);
           }
-          // Finalize any pending human transcript when AI starts speaking
-          if (partialTranscript && partialTranscript.speaker === 'HUMAN') {
-            setTranscript(prev => [...prev, {
-              text: partialTranscript.text.trim(),
-              timestamp: partialTranscript.startTime,
-              speaker: 'HUMAN'
-            }]);
-            setPartialTranscript(null);
-            // Auto-scroll after adding finalized transcript
-            setTimeout(() => {
-              if (transcriptEndRef.current) {
-                transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }
-            }, 100);
-          }
+          // Don't finalize transcript on speech-start - let the 2-second timeout handle it
+          // This keeps sentences together in one line until 2 seconds of silence
         });
 
         vapi.on("speech-end", () => {
           setIsSpeaking(false);
-          // Finalize AI transcript after speech ends
-          if (partialTranscript && partialTranscript.speaker === 'AI') {
-            setTranscript(prev => [...prev, {
-              text: partialTranscript.text.trim(),
-              timestamp: partialTranscript.startTime,
-              speaker: 'AI'
-            }]);
-            setPartialTranscript(null);
-            // Auto-scroll after adding finalized transcript
-            setTimeout(() => {
-              if (transcriptEndRef.current) {
-                transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-              }
-            }, 100);
-          }
+          // Don't finalize transcript on speech-end - let the 2-second timeout handle it
+          // This keeps all sentences from the same speaker in one line until 2 seconds of silence
         });
 
         vapi.on("message", (message: any) => {
@@ -845,53 +830,66 @@ const InterviewRoom = () => {
             }
 
             // Update or create partial transcript - accumulate text properly
+            // This keeps sentences on the same line for the same speaker until 2 seconds of silence
             setPartialTranscript(prev => {
               // If speaker changed, finalize previous and start new
               if (prev && prev.speaker !== speaker) {
-                setTranscript(t => [...t, {
-                  text: prev.text.trim(),
-                  timestamp: prev.startTime,
-                  speaker: prev.speaker
-                }]);
-                // Auto-scroll after adding finalized transcript
-                setTimeout(() => {
-                  if (transcriptEndRef.current) {
-                    transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                  }
-                }, 100);
-                return { text: message.transcript, speaker, startTime: currentTime };
-              }
-
-              // Same speaker - accumulate text (replace with latest full transcript)
-              // Vapi sends incremental updates, so we use the latest full transcript
-              if (prev && prev.speaker === speaker) {
-                return { ...prev, text: message.transcript, startTime: prev.startTime };
-              }
-
-              // New transcript
-              return { text: message.transcript, speaker, startTime: currentTime };
-            });
-
-            // Set timeout to finalize after 2 seconds of silence (increased for better accumulation)
-            const timeout = setTimeout(() => {
-              setPartialTranscript(prev => {
-                if (prev) {
+                const finalText = prev.text.trim();
+                if (finalText) {
                   setTranscript(t => [...t, {
-                    text: prev.text.trim(),
+                    text: finalText,
                     timestamp: prev.startTime,
                     speaker: prev.speaker
                   }]);
                   // Auto-scroll after adding finalized transcript
-                  setTimeout(() => {
-                    if (transcriptEndRef.current) {
-                      transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }
-                  }, 100);
+                  requestAnimationFrame(() => {
+                    setTimeout(() => {
+                      if (transcriptEndRef.current) {
+                        transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                      }
+                    }, 50);
+                  });
+                }
+                return { text: message.transcript.trim(), speaker, startTime: currentTime };
+              }
+
+              // Same speaker - accumulate text (replace with latest full transcript)
+              // Vapi sends incremental updates with complete sentences, so we replace the entire text
+              // This keeps all sentences from the same speaker together until 2 seconds of silence
+              if (prev && prev.speaker === speaker) {
+                return { ...prev, text: message.transcript.trim(), startTime: prev.startTime };
+              }
+
+              // New transcript for this speaker
+              return { text: message.transcript.trim(), speaker, startTime: currentTime };
+            });
+
+            // Set timeout to finalize after 2 seconds of silence for the same person
+            // This keeps sentences on the same line until 2 seconds of quiet time
+            const timeout = setTimeout(() => {
+              setPartialTranscript(prev => {
+                if (prev) {
+                  const finalText = prev.text.trim();
+                  if (finalText) {
+                    setTranscript(t => [...t, {
+                      text: finalText,
+                      timestamp: prev.startTime,
+                      speaker: prev.speaker
+                    }]);
+                    // Auto-scroll after adding finalized transcript
+                    requestAnimationFrame(() => {
+                      setTimeout(() => {
+                        if (transcriptEndRef.current) {
+                          transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        }
+                      }, 50);
+                    });
+                  }
                   return null;
                 }
                 return null;
               });
-            }, 2000); // 2 second silence threshold for better accumulation
+            }, 2000); // 2 second silence threshold - keeps sentences together for same person
 
             setTranscriptTimeout(timeout);
           }
@@ -907,19 +905,27 @@ const InterviewRoom = () => {
       };
 
       console.log("Starting Vapi with extracted questions:", sessionContext);
+      console.log("Client questions:", clientQuestions);
+      console.log("AI generated questions:", aiGeneratedQuestions);
+
+      // Validate questions before starting
+      if (!clientQuestions && !aiGeneratedQuestions) {
+        throw new Error("No questions available. Both client and AI questions are empty.");
+      }
 
       // Start Vapi call - Vapi will manage its own audio context
       // Don't create a separate audio context as it conflicts with Vapi's audio management
-      await vapi.start({
+      try {
+        await vapi.start({
         name: "AI Interview Assistant",
         transcriber: {
           provider: "deepgram",
-          model: "nova-2", // Use latest Deepgram model for better accuracy
+          model: "nova-2-general", // Better model for general conversation with improved accuracy
           language: "en-US",
           // Enhanced settings for better speech recognition
           keywords: [], // Add domain-specific keywords if needed for better recognition
           smartFormat: true, // Enable smart formatting (punctuation, capitalization)
-          endpointing: 500, // Endpointing timeout in ms (500ms silence to finalize - better for natural pauses)
+          endpointing: 500, // Maximum allowed endpointing timeout (500ms for natural pauses)
         },
         model: {
           provider: "openai",
@@ -928,6 +934,8 @@ const InterviewRoom = () => {
             {
               role: "system",
               content: `You are an AI Interview Assistant conducting a professional voice-based interview.
+
+CRITICAL INSTRUCTION: You MUST speak FIRST when the call connects. Do NOT wait for the candidate to speak. Start immediately with the greeting.
 
 IMPORTANT: You MUST use ONLY the questions provided below from the database. Do not generate any new questions.
 
@@ -945,8 +953,12 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
 
 === INTERVIEW PROTOCOL ===
 
-1. GREETING:
-   - Start by greeting: "Hello ${sessionContext.candidate_name}, welcome to your interview. I will be asking you a series of questions today."
+CRITICAL: You MUST speak FIRST immediately when the call connects. Do NOT wait for the candidate to speak. Start the conversation immediately.
+
+1. GREETING (SPEAK FIRST):
+   - IMMEDIATELY when the call starts, greet the candidate: "Hello, ${sessionContext.candidate_name}, welcome to your interview. I will be asking you a series of questions today."
+   - Do NOT wait for the candidate to speak first. You initiate the conversation.
+   - After greeting, immediately proceed to ask the first question.
 
 2. QUESTION SEQUENCE:
    ${clientQuestions ? `- First, ask ALL questions from "Questions from Client" one by one in order.` : ""}
@@ -963,18 +975,29 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
 
 4. CLOSING:
    - After all questions are complete, conclude with: "Thank you. This concludes your interview. Have a good day."`
+            },
+            {
+              role: "assistant",
+              content: `Hello, ${sessionContext.candidate_name}, welcome to your interview. I will be asking you a series of questions today.`
             }
           ]
         },
         voice: {
           provider: "playht",
           voiceId: "jennifer",
-          // Enhanced voice settings for better quality and clarity
           speed: 1.0, // Normal speaking speed
-          stability: 0.5, // Voice stability (0-1) - balanced for natural speech
-          similarityBoost: 0.75, // Voice similarity boost (0-1) - higher for clearer voice
         },
-      });
+        });
+        console.log("Vapi start() called successfully");
+      } catch (startError: any) {
+        console.error("Vapi start() error details:", {
+          error: startError,
+          message: startError?.message,
+          stack: startError?.stack,
+          response: startError?.response,
+        });
+        throw startError;
+      }
 
       // The interview will be set to active when call-start event fires
       // If it doesn't fire within 3 seconds, set it manually
@@ -987,14 +1010,42 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
 
     } catch (error: any) {
       console.error("Failed to start interview:", error);
+      console.error("Error details:", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response,
+        data: error?.data,
+      });
       setConnecting(false);
       setShowConnectingModal(false);
       setVapiInitialized(false);
       setVapiReady(false);
       setInterviewStarted(false);
+      
+      // Clean up media streams on error
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        setMediaStream(null);
+        setCameraOn(false);
+        setMicOn(false);
+      }
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        setScreenStream(null);
+      }
+      
+      // Provide more specific error messages
+      let errorMessage = "Failed to start the interview. Please try again.";
+      if (error?.message?.includes("400") || error?.response?.status === 400) {
+        errorMessage = "Invalid request to Vapi. Please check your API configuration or contact support.";
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to start the interview. Please try again.",
+        title: "Interview Error",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -1295,203 +1346,67 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
   }
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
+    <div className="h-screen bg-gradient-subtle flex flex-col overflow-hidden">
+      {/* Header - Compact */}
+      <Card className="rounded-none border-x-0 border-t-0 shadow-sm">
+        <CardHeader className="py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <div>
-                <CardTitle className="text-2xl">Interview Room</CardTitle>
-                <CardDescription className="mt-2">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    <span>{candidate.name} ({candidate.email})</span>
-                  </div>
-                </CardDescription>
+                <CardTitle className="text-lg">Interview Room</CardTitle>
+                <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
+                  <User className="h-3 w-3" />
+                  <span>{candidate.name} ({candidate.email})</span>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <InterviewBadge status={interviewActive ? "active" : "scheduled"} />
-                <Button
-                  onClick={handleExit}
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  disabled={isUploading}
-                >
-                  <LogOut className="h-4 w-4" />
-                  Exit
-                </Button>
-              </div>
+              <InterviewBadge status={interviewActive ? "active" : "scheduled"} />
             </div>
+            <Button
+              onClick={handleExit}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={isUploading}
+            >
+              <LogOut className="h-4 w-4" />
+              Exit
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Main Content - Video and Transcript Side by Side */}
+      <div className="flex-1 grid grid-cols-2 gap-4 p-4 overflow-hidden">
+        {/* Candidate Video - Left */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Your Camera</CardTitle>
           </CardHeader>
-        </Card>
-
-        {/* Video Interface - Side by Side */}
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Candidate Video */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Your Camera</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
-                <video
-                  id="candidate-video"
-                  autoPlay
-                  muted
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-                {!cameraOn && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted">
-                    <VideoOff className="h-16 w-16 text-muted-foreground" />
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* AI Avatar */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Interviewer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="relative aspect-video bg-gradient-to-br from-primary/20 to-accent/20 rounded-lg overflow-hidden flex items-center justify-center">
-                {isSpeaking ? (
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-primary/30 rounded-full animate-pulse" />
-                      <Volume2 className="h-16 w-16 text-primary relative z-10 animate-pulse" />
-                    </div>
-                    <div className="text-sm text-muted-foreground">AI is speaking...</div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4">
-                    <Sparkles className="h-16 w-16 text-primary" />
-                    <div className="text-sm text-muted-foreground">AI is listening...</div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Controls */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center gap-4">
-              {/* Media Error Display */}
-              {mediaError && !interviewActive && (
-                <div className="w-full max-w-2xl">
-                  <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <div className="text-sm font-medium text-destructive mb-3">{mediaError}</div>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={retryMediaAccess}
-                        size="sm"
-                        variant="outline"
-                      >
-                        Retry
-                      </Button>
-                      <Button
-                        onClick={() => setMediaError(null)}
-                        size="sm"
-                        variant="ghost"
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
+          <CardContent className="flex-1 flex items-center justify-center p-4">
+            <div className="relative w-full h-full bg-muted rounded-lg overflow-hidden">
+              <video
+                id="candidate-video"
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              {!cameraOn && (
+                <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                  <VideoOff className="h-16 w-16 text-muted-foreground" />
                 </div>
               )}
-
-              {/* Recording Indicator */}
-              {isRecording && (
-                <div className="flex items-center gap-3 px-4 py-2 bg-destructive/10 border border-destructive/20 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 bg-destructive rounded-full animate-pulse" />
-                    <span className="text-sm font-medium">Recording</span>
-                  </div>
-                  <span className="text-sm font-mono">{formatDuration(recordingDuration)}</span>
-                </div>
-              )}
-
-              {/* Upload Progress */}
-              {isUploading && (
-                <div className="w-full max-w-md">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm">Uploading recording...</span>
-                    <span className="text-sm font-medium">{uploadProgress}%</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Please do not close this page until upload is complete
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-4">
-                {!interviewActive ? (
-                  <Button
-                    onClick={startInterview}
-                    size="lg"
-                    className="min-w-48"
-                    disabled={isUploading || vapiInitialized}
-                  >
-                    Start Interview
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      onClick={toggleCamera}
-                      size="lg"
-                      variant="outline"
-                      className="gap-2"
-                      disabled={isUploading}
-                    >
-                      {cameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                      {cameraOn ? "Camera On" : "Camera Off"}
-                    </Button>
-                    <Button
-                      onClick={toggleMic}
-                      size="lg"
-                      variant="outline"
-                      className="gap-2"
-                      disabled={isUploading}
-                    >
-                      {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                      {micOn ? "Mic On" : "Mic Off"}
-                    </Button>
-                    <Button
-                      onClick={endInterview}
-                      size="lg"
-                      variant="destructive"
-                      className="min-w-48"
-                      disabled={isUploading}
-                    >
-                      {isUploading ? "Saving..." : "End Interview"}
-                    </Button>
-                  </>
-                )}
-              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Transcript */}
-        <Card className="shadow-lg">
-          <CardHeader className="border-b bg-gradient-to-r from-primary/5 to-accent/5">
+        {/* Transcript - Right (replacing AI Avatar) */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="pb-2 border-b">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                Live Interview Transcript
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Live Transcript
               </CardTitle>
               {transcript.length > 0 && (
                 <span className="text-xs text-muted-foreground font-medium">
@@ -1500,16 +1415,20 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
               )}
             </div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="flex-1 p-4 overflow-hidden">
             <div
               ref={transcriptContainerRef}
-              className="space-y-4 max-h-96 overflow-y-auto p-6 bg-gradient-to-b from-background to-muted/20"
-              style={{ scrollBehavior: 'smooth' }}
+              className="h-full overflow-y-auto pr-2 scroll-smooth"
+              style={{ 
+                scrollBehavior: 'smooth',
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
+              }}
             >
               {transcript.length === 0 && !partialTranscript ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="rounded-full bg-primary/10 p-4 mb-4">
-                    <Sparkles className="h-8 w-8 text-primary/60" />
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="rounded-full bg-primary/10 p-3 mb-3">
+                    <Sparkles className="h-6 w-6 text-primary/60" />
                   </div>
                   <p className="text-sm font-medium text-foreground mb-1">
                     Your interview transcript will appear here
@@ -1519,21 +1438,21 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   </p>
                 </div>
               ) : (
-                <>
+                <div className="space-y-3">
                   {transcript.map((entry, idx) => (
                     <div 
-                      key={idx} 
-                      className={`group flex gap-4 p-4 rounded-lg transition-all duration-200 ${
+                      key={`${entry.timestamp}-${idx}`}
+                      className={`group flex gap-3 p-3 rounded-lg transition-all duration-200 ${
                         entry.speaker === 'AI' 
-                          ? 'bg-primary/5 border-l-4 border-primary hover:bg-primary/10' 
-                          : 'bg-accent/5 border-l-4 border-accent hover:bg-accent/10'
+                          ? 'bg-blue-50 dark:bg-blue-950/30 border-l-4 border-blue-500' 
+                          : 'bg-green-50 dark:bg-green-950/30 border-l-4 border-green-500'
                       }`}
                     >
                       <div className="flex-shrink-0">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                           entry.speaker === 'AI' 
-                            ? 'bg-primary/20 text-primary' 
-                            : 'bg-accent/20 text-accent'
+                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' 
+                            : 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400'
                         }`}>
                           {entry.speaker === 'AI' ? (
                             <Sparkles className="h-4 w-4" />
@@ -1544,8 +1463,8 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-sm font-semibold ${
-                            entry.speaker === 'AI' ? 'text-primary' : 'text-accent'
+                          <span className={`text-xs font-semibold ${
+                            entry.speaker === 'AI' ? 'text-blue-700 dark:text-blue-300' : 'text-green-700 dark:text-green-300'
                           }`}>
                             {entry.speaker === 'AI' ? 'Interviewer' : candidate.name}
                           </span>
@@ -1553,7 +1472,7 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                             {entry.timestamp}
                           </span>
                         </div>
-                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words">
                           {entry.text}
                         </p>
                       </div>
@@ -1562,17 +1481,17 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                   {/* Show partial transcript as it's being spoken */}
                   {partialTranscript && (
                     <div 
-                      className={`group flex gap-4 p-4 rounded-lg transition-all duration-200 animate-pulse ${
+                      className={`group flex gap-3 p-3 rounded-lg border-dashed ${
                         partialTranscript.speaker === 'AI' 
-                          ? 'bg-primary/5 border-l-4 border-primary border-dashed' 
-                          : 'bg-accent/5 border-l-4 border-accent border-dashed'
+                          ? 'bg-blue-50 dark:bg-blue-950/30 border-l-4 border-blue-500 border-dashed' 
+                          : 'bg-green-50 dark:bg-green-950/30 border-l-4 border-green-500 border-dashed'
                       }`}
                     >
                       <div className="flex-shrink-0">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                           partialTranscript.speaker === 'AI' 
-                            ? 'bg-primary/20 text-primary' 
-                            : 'bg-accent/20 text-accent'
+                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' 
+                            : 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400'
                         }`}>
                           {partialTranscript.speaker === 'AI' ? (
                             <Sparkles className="h-4 w-4" />
@@ -1583,32 +1502,138 @@ ${aiGeneratedQuestions || "No AI-generated questions provided."}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-sm font-semibold ${
-                            partialTranscript.speaker === 'AI' ? 'text-primary' : 'text-accent'
+                          <span className={`text-xs font-semibold ${
+                            partialTranscript.speaker === 'AI' ? 'text-blue-700 dark:text-blue-300' : 'text-green-700 dark:text-green-300'
                           }`}>
                             {partialTranscript.speaker === 'AI' ? 'Interviewer' : candidate.name}
                           </span>
                           <span className="text-xs text-muted-foreground font-mono">
                             {partialTranscript.startTime}
                           </span>
-                          <span className="text-xs text-muted-foreground italic">
-                            (speaking...)
+                          <span className="text-xs text-muted-foreground italic flex items-center gap-1">
+                            <span className="inline-block w-1 h-1 bg-current rounded-full animate-pulse" />
+                            speaking...
                           </span>
                         </div>
-                        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words">
                           {partialTranscript.text}
-                          <span className="inline-block w-2 h-4 bg-current animate-pulse ml-1" />
+                          <span className="inline-block w-1.5 h-3 bg-current animate-pulse ml-1 align-middle" />
                         </p>
                       </div>
                     </div>
                   )}
                   <div ref={transcriptEndRef} />
-                </>
+                </div>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Controls - Fixed at Bottom */}
+      <Card className="rounded-none border-x-0 border-b-0 shadow-sm">
+        <CardContent className="py-4">
+          <div className="flex flex-col items-center gap-3">
+            {/* Media Error Display */}
+            {mediaError && !interviewActive && (
+              <div className="w-full max-w-2xl">
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <div className="text-xs font-medium text-destructive mb-2">{mediaError}</div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={retryMediaAccess}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Retry
+                    </Button>
+                    <Button
+                      onClick={() => setMediaError(null)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recording Indicator */}
+            {isRecording && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-destructive/10 border border-destructive/20 rounded-lg">
+                <div className="h-2 w-2 bg-destructive rounded-full animate-pulse" />
+                <span className="text-xs font-medium">Recording</span>
+                <span className="text-xs font-mono">{formatDuration(recordingDuration)}</span>
+              </div>
+            )}
+
+            {/* Upload Progress */}
+            {isUploading && (
+              <div className="w-full max-w-md">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs">Uploading recording...</span>
+                  <span className="text-xs font-medium">{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-1.5">
+                  <div
+                    className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 text-center">
+                  Please do not close this page until upload is complete
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              {!interviewActive ? (
+                <Button
+                  onClick={startInterview}
+                  size="lg"
+                  className="min-w-40"
+                  disabled={isUploading || vapiInitialized}
+                >
+                  Start Interview
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={toggleCamera}
+                    size="lg"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={isUploading}
+                  >
+                    {cameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                    {cameraOn ? "Camera On" : "Camera Off"}
+                  </Button>
+                  <Button
+                    onClick={toggleMic}
+                    size="lg"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={isUploading}
+                  >
+                    {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                    {micOn ? "Mic On" : "Mic Off"}
+                  </Button>
+                  <Button
+                    onClick={endInterview}
+                    size="lg"
+                    variant="destructive"
+                    className="min-w-40"
+                    disabled={isUploading}
+                  >
+                    {isUploading ? "Saving..." : "End Interview"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Connecting/Loading Modal */}
       <Dialog open={showConnectingModal} onOpenChange={() => {}}>
