@@ -13,7 +13,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sparkles, LogOut, Link as LinkIcon, FileText, ArrowRight, Linkedin, Loader2, AlertCircle, Plus, X } from "lucide-react";
+import { Sparkles, LogOut, Link as LinkIcon, FileText, ArrowRight, Linkedin, Loader2, AlertCircle, Plus, X, Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { isLinkedInConnected } from "@/lib/linkedinAuth";
@@ -24,11 +24,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 const CreateJob = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
-    const [importMethod, setImportMethod] = useState<"linkedin" | "manual" | null>(null);
+    const [importMethod, setImportMethod] = useState<"linkedin" | "indeed" | "manual" | null>(null);
     const [linkedinUrl, setLinkedinUrl] = useState("");
+    const [indeedUrl, setIndeedUrl] = useState("");
     const [scraping, setScraping] = useState(false);
     const [scrapingError, setScrapingError] = useState("");
     const [postToLinkedIn, setPostToLinkedIn] = useState(false);
+    const [postToIndeed, setPostToIndeed] = useState(false);
     const [linkedinConnected, setLinkedinConnected] = useState(false);
     const [linkedinOrgs, setLinkedinOrgs] = useState<any[]>([]);
     const [selectedOrg, setSelectedOrg] = useState("");
@@ -288,20 +290,37 @@ const CreateJob = () => {
                             </p>
                         </div>
 
-                        <div className="grid md:grid-cols-2 gap-6">
+                        <div className="grid md:grid-cols-3 gap-6">
                             <Card
                                 className="hover-scale hover-glow cursor-pointer transition-all"
                                 onClick={() => setImportMethod("linkedin")}
                             >
                                 <CardHeader>
-                                    <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-accent mb-4">
-                                        <LinkIcon className="h-6 w-6 text-primary-foreground" />
+                                    <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 mb-4">
+                                        <Linkedin className="h-6 w-6 text-white" />
                                     </div>
                                     <CardTitle>Import from LinkedIn</CardTitle>
                                 </CardHeader>
                                 <CardContent>
                                     <p className="text-muted-foreground">
                                         Paste a LinkedIn job URL and we'll automatically scrape and fill in all the details for you.
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card
+                                className="hover-scale hover-glow cursor-pointer transition-all"
+                                onClick={() => setImportMethod("indeed")}
+                            >
+                                <CardHeader>
+                                    <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 mb-4">
+                                        <Globe className="h-6 w-6 text-white" />
+                                    </div>
+                                    <CardTitle>Import from Indeed</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-muted-foreground">
+                                        Paste an Indeed job URL and we'll automatically scrape and fill in all the details for you.
                                     </p>
                                 </CardContent>
                             </Card>
@@ -323,6 +342,133 @@ const CreateJob = () => {
                                 </CardContent>
                             </Card>
                         </div>
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
+    // Indeed import screen
+    if (importMethod === "indeed") {
+        return (
+            <div className="min-h-screen bg-[var(--gradient-subtle)]">
+                <header className="bg-background/95 backdrop-blur-md border-b border-border sticky top-0 z-50">
+                    <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex items-center justify-between h-16">
+                            <Link to="/dashboard" className="flex items-center space-x-2">
+                                <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-accent">
+                                    <Sparkles className="h-5 w-5 text-primary-foreground" />
+                                </div>
+                                <span className="text-xl font-bold text-gradient">AI Hiring</span>
+                            </Link>
+                            <Button variant="ghost" size="default" onClick={handleLogout}>
+                                <LogOut className="h-4 w-4 mr-2" />
+                                Logout
+                            </Button>
+                        </div>
+                    </div>
+                </header>
+
+                <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+                    <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setImportMethod(null);
+                                setIndeedUrl("");
+                                setScrapingError("");
+                            }}
+                        >
+                            ← Back
+                        </Button>
+
+                        <div className="text-center space-y-4">
+                            <h1 className="text-3xl font-bold">Import from Indeed</h1>
+                            <p className="text-muted-foreground">
+                                Paste the Indeed job posting URL below to automatically extract job details
+                            </p>
+                        </div>
+
+                        <Card>
+                            <CardContent className="pt-6 space-y-6">
+                                {scrapingError && (
+                                    <Alert variant="destructive">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertDescription>{scrapingError}</AlertDescription>
+                                    </Alert>
+                                )}
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="indeed-url">Indeed Job URL *</Label>
+                                    <Input
+                                        id="indeed-url"
+                                        placeholder="https://www.indeed.com/viewjob?jk=..."
+                                        value={indeedUrl}
+                                        onChange={(e) => {
+                                            setIndeedUrl(e.target.value);
+                                            setScrapingError("");
+                                        }}
+                                        disabled={scraping}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Example: https://www.indeed.com/viewjob?jk=abc123def456
+                                    </p>
+                                </div>
+
+                                <Button
+                                    variant="hero"
+                                    size="lg"
+                                    className="w-full"
+                                    onClick={() => {
+                                        toast({
+                                            title: "Coming Soon",
+                                            description: "Indeed import functionality is coming soon!",
+                                        });
+                                    }}
+                                    disabled={scraping || !indeedUrl}
+                                >
+                                    {scraping ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Scraping Job Details...
+                                        </>
+                                    ) : (
+                                        "Import Job Details"
+                                    )}
+                                </Button>
+
+                                <div className="text-center">
+                                    <Button
+                                        variant="link"
+                                        onClick={() => {
+                                            setImportMethod("manual");
+                                            setIndeedUrl("");
+                                            setScrapingError("");
+                                        }}
+                                        disabled={scraping}
+                                    >
+                                        Or add job details manually
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="bg-indigo-50 border-indigo-200">
+                            <CardContent className="pt-6">
+                                <div className="flex gap-3">
+                                    <AlertCircle className="h-5 w-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+                                    <div className="space-y-2 text-sm text-indigo-900">
+                                        <p className="font-medium">How it works:</p>
+                                        <ul className="list-disc list-inside space-y-1 text-indigo-800">
+                                            <li>Paste a public Indeed job posting URL</li>
+                                            <li>We'll automatically extract job title, description, location, and more</li>
+                                            <li>Review and edit the details before posting</li>
+                                            <li>Optionally post back to Indeed (requires connection)</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
                     </div>
                 </main>
             </div>
@@ -733,6 +879,35 @@ const CreateJob = () => {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Indeed Posting Option */}
+                                    <div className="space-y-4 md:col-span-2 border-t pt-4">
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="post-indeed"
+                                                checked={postToIndeed}
+                                                onCheckedChange={(checked) =>
+                                                    setPostToIndeed(checked as boolean)
+                                                }
+                                            />
+                                            <label
+                                                htmlFor="post-indeed"
+                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2"
+                                            >
+                                                <Globe className="h-4 w-4 text-indigo-600" />
+                                                Post this job to Indeed
+                                            </label>
+                                        </div>
+
+                                        {postToIndeed && (
+                                            <Alert>
+                                                <AlertCircle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    Indeed integration is coming soon! Connect your Indeed account to post jobs directly.
+                                                </AlertDescription>
+                                            </Alert>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <Button

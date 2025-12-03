@@ -13,7 +13,8 @@ import {
     XCircle,
     Briefcase,
     AlertCircle,
-    Linkedin
+    Linkedin,
+    Globe
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { FileUploadModal } from "@/components/FileUploadModal";
@@ -349,8 +350,8 @@ const ImportCandidates = () => {
                         </CardContent>
                     </Card>
 
-                    {/* Import Options - 4 Cards Grid */}
-                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Import Options - 5 Cards Grid */}
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                         {/* Manual Upload */}
                         <Card
                             className={`hover-scale hover-glow transition-all animate-fade-in-up ${!selectedJobId ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
@@ -506,10 +507,44 @@ const ImportCandidates = () => {
                             </CardContent>
                         </Card>
 
+                        {/* Indeed Integration */}
+                        <Card
+                            className="hover-scale hover-glow transition-all animate-fade-in-up relative"
+                            style={{ animationDelay: "200ms" }}
+                        >
+                            <CardHeader>
+                                <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-4 mx-auto">
+                                    <Globe className="h-8 w-8 text-white" />
+                                </div>
+                                <CardTitle className="text-center">
+                                    Indeed Integration
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <p className="text-center text-muted-foreground mb-6">
+                                    Connect your Indeed account to import candidates and manage job postings
+                                </p>
+                                <Button
+                                    variant="outline"
+                                    className="w-full"
+                                    onClick={() => {
+                                        toast({
+                                            title: "Coming Soon",
+                                            description: "Indeed integration is coming soon!",
+                                        });
+                                    }}
+                                    disabled={!selectedJobId}
+                                >
+                                    <Globe className="h-4 w-4 mr-2" />
+                                    Connect Indeed
+                                </Button>
+                            </CardContent>
+                        </Card>
+
                         {/* Share Link */}
                         <Card
                             className="hover-scale hover-glow transition-all animate-fade-in-up"
-                            style={{ animationDelay: "200ms" }}
+                            style={{ animationDelay: "250ms" }}
                         >
                             <CardHeader>
                                 <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-br from-primary to-accent mb-4 mx-auto">
