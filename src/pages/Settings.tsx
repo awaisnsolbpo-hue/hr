@@ -21,7 +21,8 @@ import {
     Moon,
     Sun,
     CheckCircle,
-    Sparkles
+    Sparkles,
+    Briefcase
 } from "lucide-react";
 import {
     AlertDialog,
@@ -457,6 +458,40 @@ const Settings = () => {
                                             </div>
                                         ) : (
                                             <Button size="sm" onClick={() => navigate("/gmail-import")}>
+                                                Connect
+                                            </Button>
+                                        )}
+                                    </div>
+
+                                    {/* Indeed Integration */}
+                                    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                                                <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                            </div>
+                                            <div>
+                                                <p className="font-medium">Indeed</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {profile?.indeed_connected || profile?.indeed_access_token
+                                                        ? "Connected" 
+                                                        : "Post jobs and import candidates"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {profile?.indeed_connected || profile?.indeed_access_token ? (
+                                            <div className="flex items-center gap-2">
+                                                <CheckCircle className="h-5 w-5 text-green-500" />
+                                                <Button variant="outline" size="sm">
+                                                    Disconnect
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <Button size="sm" onClick={() => {
+                                                toast({
+                                                    title: "Coming Soon",
+                                                    description: "Indeed integration is coming soon!",
+                                                });
+                                            }}>
                                                 Connect
                                             </Button>
                                         )}

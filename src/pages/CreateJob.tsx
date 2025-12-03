@@ -32,6 +32,7 @@ const CreateJob = () => {
     const [postToLinkedIn, setPostToLinkedIn] = useState(false);
     const [postToIndeed, setPostToIndeed] = useState(false);
     const [linkedinConnected, setLinkedinConnected] = useState(false);
+    const [indeedConnected, setIndeedConnected] = useState(false);
     const [linkedinOrgs, setLinkedinOrgs] = useState<any[]>([]);
     const [selectedOrg, setSelectedOrg] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -881,33 +882,64 @@ const CreateJob = () => {
                                     )}
 
                                     {/* Indeed Posting Option */}
-                                    <div className="space-y-4 md:col-span-2 border-t pt-4">
-                                        <div className="flex items-center space-x-2">
-                                            <Checkbox
-                                                id="post-indeed"
-                                                checked={postToIndeed}
-                                                onCheckedChange={(checked) =>
-                                                    setPostToIndeed(checked as boolean)
-                                                }
-                                            />
-                                            <label
-                                                htmlFor="post-indeed"
-                                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2"
-                                            >
-                                                <Globe className="h-4 w-4 text-indigo-600" />
-                                                Post this job to Indeed
-                                            </label>
-                                        </div>
+                                    {indeedConnected && (
+                                        <div className="space-y-4 md:col-span-2 border-t pt-4">
+                                            <div className="flex items-center space-x-2">
+                                                <Checkbox
+                                                    id="post-indeed"
+                                                    checked={postToIndeed}
+                                                    onCheckedChange={(checked) =>
+                                                        setPostToIndeed(checked as boolean)
+                                                    }
+                                                />
+                                                <label
+                                                    htmlFor="post-indeed"
+                                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2"
+                                                >
+                                                    <Globe className="h-4 w-4 text-indigo-600" />
+                                                    Post this job to Indeed
+                                                </label>
+                                            </div>
 
-                                        {postToIndeed && (
-                                            <Alert>
-                                                <AlertCircle className="h-4 w-4" />
-                                                <AlertDescription>
-                                                    Indeed integration is coming soon! Connect your Indeed account to post jobs directly.
-                                                </AlertDescription>
-                                            </Alert>
-                                        )}
-                                    </div>
+                                            {postToIndeed && (
+                                                <Alert>
+                                                    <AlertCircle className="h-4 w-4" />
+                                                    <AlertDescription>
+                                                        Indeed integration is coming soon! Connect your Indeed account to post jobs directly.
+                                                    </AlertDescription>
+                                                </Alert>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {!indeedConnected && (
+                                        <div className="md:col-span-2 border-t pt-4">
+                                            <div className="flex items-center justify-between p-4 bg-indigo-50 rounded-lg">
+                                                <div className="flex items-center gap-3">
+                                                    <Globe className="h-8 w-8 text-indigo-600" />
+                                                    <div>
+                                                        <p className="font-medium">Connect Indeed</p>
+                                                        <p className="text-sm text-muted-foreground">
+                                                            Post jobs directly to Indeed
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        toast({
+                                                            title: "Coming Soon",
+                                                            description: "Indeed connection will be available soon!",
+                                                        });
+                                                    }}
+                                                >
+                                                    Connect
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <Button
